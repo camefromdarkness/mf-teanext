@@ -21,8 +21,7 @@
 /build
 /public/uploads/teas/
 
-# local data and database backups
-/data/
+# database backups
 *.dump
 *.backup
 *.sql.gz
