@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
+import { connection } from "next/server";
 import { auth } from "@/auth";
 import AccountProfileForm from "@/components/AccountProfileForm";
 import SignOutButton from "@/components/SignOutButton";
@@ -27,6 +28,7 @@ function AccountLoading() {
 }
 
 async function AccountContent() {
+  await connection();
   const session = await auth();
   if (!session?.user) redirect("/auth/signin");
   const profile = await prisma.user.findUnique({
