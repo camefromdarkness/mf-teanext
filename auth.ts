@@ -173,6 +173,7 @@ const telegramProvider: OIDCConfig<TelegramProfile> = {
   issuer: "https://oauth.telegram.org",
   clientId: process.env.AUTH_TELEGRAM_ID ?? "",
   clientSecret: process.env.AUTH_TELEGRAM_SECRET ?? "",
+  token: "https://oauth.telegram.org/token",
   authorization: {
     params: {
       scope: "openid profile",
