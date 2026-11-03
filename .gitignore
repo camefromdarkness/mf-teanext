@@ -19,19 +19,30 @@
 
 # production
 /build
+/public/uploads/teas/
+
+# local data and database backups
+/data/
+*.dump
+*.backup
+*.sql.gz
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# local environment and secrets
 .env*
+!.env.example
+!.env.staging.example
 
 # vercel
 .vercel

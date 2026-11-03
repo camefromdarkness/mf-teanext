@@ -1,36 +1,71 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MOON FLOWER
 
-## Getting Started
+Магазин китайского чая на Next.js с каталогом в PostgreSQL и админ-панелью.
 
-First, run the development server:
+## Первый запуск
+
+1. Создайте PostgreSQL-базу данных.
+2. Скопируйте `.env.example` в `.env.local` и задайте `DATABASE_URL`, `AUTH_SECRET`, `ADMIN_PASSWORD` (не короче 12 символов) и `ADMIN_SESSION_SECRET` (не короче 32 символов).
+3. Установите зависимости и примените схему с начальными товарами:
 
 ```bash
+npm install
+npm run db:generate
+npm run db:deploy
+npm run db:seed
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Фотографии из `public/images/` переносятся в каталог автоматически. Новые загрузки сохраняются в `public/uploads/teas/`; при размещении на VPS сохраняйте эту папку при обновлениях приложения.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Админ-панель доступна по адресу `/admin`. Через неё можно добавлять и редактировать чаи, цены, скидки от 0 до 100% (0 отключает скидку), описания и характеристики, выбирать обложку и изображения галереи, повторно использовать фотографии из каталога, загружать JPG/PNG/WebP (до 8 МБ) и скрывать товары без удаления.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Структура
 
-## Learn More
+- `app/` — маршрут главной страницы, метаданные и общие стили.
+- `components/` — шапка, каталог, карточки чая, фильтры, корзина и подвал.
+- `data/tea-seed.ts` — исходный список для начального переноса каталога в базу.
+- `prisma/` — схема PostgreSQL, миграции и seed-скрипт.
+- `public/images/` — фотографии товаров; изображения доступны по адресам `/images/<имя-файла>`.
+- `public/uploads/teas/` — загруженные через админ-панель фотографии (не включаются в Git).
 
-To learn more about Next.js, take a look at the following resources:
+Корзина хранится в браузере пользователя.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Развёртывание стейджинга на VPS через Docker
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Понадобятся VPS с Docker Engine и Docker Compose, домен с DNS-записью на VPS и доступными извне портами 80 и 443. В Compose уже включён Caddy: он автоматически получает и обновляет HTTPS-сертификат и проксирует запросы к приложению. Отдельно устанавливать Nginx/Caddy на VPS не нужно. Если серверный firewall или панель хостинга фильтруют трафик, разрешите входящие TCP-порты 80 и 443 (и UDP 443 для HTTP/3). PostgreSQL не публикуется наружу.
 
-## Deploy on Vercel
+1. Получите исходники проекта на VPS (например, клонируйте репозиторий) и перейдите в каталог `mf-tea`.
+2. Создайте серверный файл настроек:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+   ```bash
+   cp .env.staging.example .env.staging
+   chmod 600 .env.staging
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. Создайте A-запись (и при использовании IPv6 — корректную AAAA-запись) домена `STAGE_DOMAIN` на IP VPS. Дождитесь применения DNS. Отредактируйте `.env.staging`: задайте `STAGE_DOMAIN` без `https://`, например `stage.example.com`, а `AUTH_URL` с протоколом, например `https://stage.example.com`. Также задайте пароль БД, `AUTH_SECRET`, `ADMIN_PASSWORD` и `ADMIN_SESSION_SECRET`; заполните ключи провайдеров входа. Для `POSTGRES_PASSWORD` используйте случайную hex-строку, чтобы не было проблем со специальными символами в URL подключения. Секреты не помещайте в Git.
+4. Соберите приложение и примените миграции:
+
+   ```bash
+   docker compose --env-file .env.staging build app
+   docker compose --env-file .env.staging run --rm app npm run db:deploy
+   docker compose --env-file .env.staging run --rm app npm run db:seed
+   ```
+
+5. Запустите сервисы:
+
+   ```bash
+   docker compose --env-file .env.staging up -d
+   docker compose --env-file .env.staging ps
+   ```
+
+   Первый запуск также загрузит существующий каталог из seed-скрипта. Повторный запуск seed безопасен для уже добавленных или отредактированных товаров.
+
+При последующих обновлениях проекта выполните сборку, `db:deploy` и `up -d` снова. Именованные Docker volumes `postgres_data`, `tea_uploads` и `caddy_data` сохраняют базу, загруженные через админку фото и данные HTTPS-сертификатов между пересозданиями контейнеров. Не используйте `docker compose down -v`, если не хотите удалить эти данные. Перед обновлениями VPS рекомендуется настроить резервное копирование PostgreSQL и пользовательских файлов.
+
+## Проверки
+
+```bash
+npm run lint
+npm run build
+```

@@ -1,0 +1,13 @@
+.git
+.next
+node_modules
+coverage
+out
+build
+.env
+.env.*
+!.env.example
+!.env.staging.example
+public/uploads/teas
+*.tsbuildinfo
+npm-debug.log*
