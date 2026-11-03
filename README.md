@@ -48,8 +48,9 @@ npm run dev
 
    ```bash
    docker compose --env-file .env.staging build app
-   docker compose --env-file .env.staging run --rm app npm run db:deploy
-   docker compose --env-file .env.staging run --rm app npm run db:seed
+   docker compose --env-file .env.staging build migrate
+   docker compose --env-file .env.staging run --rm migrate
+   docker compose --env-file .env.staging run --rm migrate npm run db:seed
    ```
 
 5. Запустите сервисы:
@@ -61,7 +62,7 @@ npm run dev
 
    Первый запуск также загрузит существующий каталог из seed-скрипта. Повторный запуск seed безопасен для уже добавленных или отредактированных товаров.
 
-При последующих обновлениях проекта выполните сборку, `db:deploy` и `up -d` снова. Именованные Docker volumes `postgres_data`, `tea_uploads` и `caddy_data` сохраняют базу, загруженные через админку фото и данные HTTPS-сертификатов между пересозданиями контейнеров. Не используйте `docker compose down -v`, если не хотите удалить эти данные. Перед обновлениями VPS рекомендуется настроить резервное копирование PostgreSQL и пользовательских файлов.
+При последующих обновлениях проекта выполните сборку, миграцию через сервис `migrate` и `up -d` снова. Именованные Docker volumes `postgres_data`, `tea_uploads` и `caddy_data` сохраняют базу, загруженные через админку фото и данные HTTPS-сертификатов между пересозданиями контейнеров. Не используйте `docker compose down -v`, если не хотите удалить эти данные. Перед обновлениями VPS рекомендуется настроить резервное копирование PostgreSQL и пользовательских файлов.
 
 ## Проверки
 

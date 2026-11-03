@@ -7,6 +7,16 @@ FROM base AS dependencies
 COPY package.json package-lock.json ./
 RUN npm ci
 
+FROM base AS migrator
+COPY --from=dependencies /app/node_modules ./node_modules
+COPY package.json ./
+COPY prisma ./prisma
+COPY lib ./lib
+COPY data ./data
+ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
+RUN npm run db:generate
+CMD ["npm", "run", "db:deploy"]
+
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
