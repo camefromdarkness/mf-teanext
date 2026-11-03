@@ -69,7 +69,7 @@ function parseTeaInput(value: unknown): TeaInput | null {
         typeof image !== "object" ||
         image === null ||
         typeof image.url !== "string" ||
-        !/^\/(?:images|uploads\/teas)\/[A-Za-z0-9._/-]+$/.test(image.url) ||
+        !/^\/(?:images|uploads\/teas|api\/uploads\/teas)\/[A-Za-z0-9._/-]+$/.test(image.url) ||
         image.url.includes("..") ||
         typeof image.alt !== "string" ||
         image.alt.length > 300 ||

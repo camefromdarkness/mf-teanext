@@ -7,6 +7,7 @@ import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
+const MAX_REQUEST_SIZE = MAX_FILE_SIZE + 64 * 1024;
 const MAX_PIXELS = 36_000_000;
 
 export async function GET() {
@@ -29,7 +30,7 @@ export async function GET() {
     const images = new Map(registeredImages.map((image) => [image.url, image]));
     for (const file of files) {
       if (file.isFile() && /^[0-9a-f-]{36}\.webp$/i.test(file.name)) {
-        const url = `/uploads/teas/${file.name}`;
+        const url = `/api/uploads/teas/${file.name}`;
         if (!images.has(url)) images.set(url, { url, alt: "" });
       }
     }
@@ -49,20 +50,62 @@ export async function POST(request: Request) {
   }
 
   const rawContentLength = request.headers.get("content-length");
-  if (!rawContentLength || !/^\d+$/.test(rawContentLength)) {
+  if (rawContentLength && !/^\d+$/.test(rawContentLength)) {
     return NextResponse.json(
-      { error: "Не удалось проверить размер загружаемого файла." },
-      { status: 411 },
+      { error: "Некорректный размер загружаемого запроса." },
+      { status: 400 },
     );
   }
-  const contentLength = Number(rawContentLength);
-  if (contentLength > MAX_FILE_SIZE + 64 * 1024) {
+  if (rawContentLength && Number(rawContentLength) > MAX_REQUEST_SIZE) {
     return NextResponse.json({ error: "Размер файла превышает 8 МБ." }, { status: 413 });
+  }
+
+  const contentType = request.headers.get("content-type");
+  if (!contentType?.toLowerCase().startsWith("multipart/form-data;")) {
+    return NextResponse.json(
+      { error: "Запрос должен содержать файл изображения." },
+      { status: 400 },
+    );
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) {
+    return NextResponse.json({ error: "Файл не получен." }, { status: 400 });
+  }
+
+  const chunks: Uint8Array[] = [];
+  let requestSize = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      requestSize += value.byteLength;
+      if (requestSize > MAX_REQUEST_SIZE) {
+        await reader.cancel();
+        return NextResponse.json(
+          { error: "Размер файла превышает 8 МБ." },
+          { status: 413 },
+        );
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    console.error("Не удалось прочитать загружаемый файл.", error);
+    return NextResponse.json(
+      { error: "Не удалось прочитать файл." },
+      { status: 400 },
+    );
   }
 
   let form: FormData;
   try {
-    form = await request.formData();
+    const body = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+    const uploadRequest = new Request(request.url, {
+      method: "POST",
+      headers: { "content-type": contentType },
+      body,
+    });
+    form = await uploadRequest.formData();
   } catch {
     return NextResponse.json({ error: "Не удалось прочитать файл." }, { status: 400 });
   }
@@ -96,7 +139,7 @@ export async function POST(request: Request) {
     const filename = `${randomUUID()}.webp`;
     await mkdir(directory, { recursive: true });
     await image.rotate().webp({ quality: 86 }).toFile(path.join(directory, filename));
-    return NextResponse.json({ url: `/uploads/teas/${filename}` });
+    return NextResponse.json({ url: `/api/uploads/teas/${filename}` });
   } catch (error) {
     console.error("Не удалось сохранить изображение чая.", error);
     return NextResponse.json(
