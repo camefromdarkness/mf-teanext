@@ -43,7 +43,7 @@ npm run dev
    chmod 600 .env.staging
    ```
 
-3. Создайте A-запись (и при использовании IPv6 — корректную AAAA-запись) домена `STAGE_DOMAIN` на IP VPS. Дождитесь применения DNS. Отредактируйте `.env.staging`: задайте `STAGE_DOMAIN` без `https://`, например `stage.example.com`, а `AUTH_URL` с протоколом, например `https://stage.example.com`. Также задайте пароль БД, `AUTH_SECRET`, `ADMIN_PASSWORD` и `ADMIN_SESSION_SECRET`; заполните ключи провайдеров входа. Для `POSTGRES_PASSWORD` используйте случайную hex-строку, чтобы не было проблем со специальными символами в URL подключения. Секреты не помещайте в Git.
+3. Создайте A-запись (и при использовании IPv6 — корректную AAAA-запись) домена `STAGE_DOMAIN` на IP VPS. Дождитесь применения DNS. Отредактируйте `.env.staging`: задайте `STAGE_DOMAIN` без `https://`, например `stage.example.com`, а `AUTH_URL` с протоколом, например `https://stage.example.com`. Также задайте пароль БД, `AUTH_SECRET`, `ADMIN_PASSWORD` и `ADMIN_SESSION_SECRET`; заполните ключи провайдеров входа. Для Telegram Login переменные `AUTH_TELEGRAM_ID` и `AUTH_TELEGRAM_SECRET` — это Client ID и Client Secret из BotFather → Login Widget, не `@username` бота и не Bot API token. Для `POSTGRES_PASSWORD` используйте случайную hex-строку, чтобы не было проблем со специальными символами в URL подключения. Секреты не помещайте в Git.
 4. Соберите приложение и примените миграции:
 
    ```bash

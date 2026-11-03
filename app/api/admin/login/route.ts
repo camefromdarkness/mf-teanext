@@ -31,7 +31,10 @@ export async function POST(request: Request) {
   if (!result.ok) {
     if (result.reason === "unconfigured") {
       return NextResponse.json(
-        { error: "Настройте ADMIN_PASSWORD и ADMIN_SESSION_SECRET в .env.local." },
+        {
+          error:
+            "На сервере не настроены ADMIN_PASSWORD и ADMIN_SESSION_SECRET. Проверьте файл окружения Docker.",
+        },
         { status: 503 },
       );
     }
