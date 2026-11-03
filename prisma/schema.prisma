@@ -12,15 +12,22 @@ enum UserRole {
   ADMIN
 }
 
+enum OrderStatus {
+  PENDING
+}
+
 model User {
   id            String    @id @default(cuid())
+  publicId      String    @unique @default(uuid()) @db.Uuid
   name          String?
   email         String?   @unique
+  phoneNumber   String?   @db.VarChar(32)
   emailVerified DateTime?
   image         String?
   role          UserRole  @default(CUSTOMER)
   accounts      Account[]
   sessions      Session[]
+  orders        Order[]
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }
@@ -90,4 +97,31 @@ model TeaImage {
 
   @@unique([teaId, url])
   @@index([teaId, sortOrder])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  userId        String
+  contactName   String?
+  phoneNumber   String      @db.VarChar(32)
+  status        OrderStatus @default(PENDING)
+  total         Int
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items         OrderItem[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId, createdAt])
+}
+
+model OrderItem {
+  id        String @id @default(cuid())
+  orderId   String
+  teaName   String
+  teaUnit   String
+  quantity  Int
+  unitPrice Int
+  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }

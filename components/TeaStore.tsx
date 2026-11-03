@@ -235,6 +235,7 @@ export default function TeaStore({ teas }: { teas: Tea[] }) {
                 : [...current, { id, quantity }];
             });
           }}
+        onOrderCreated={() => updateCart(teas, () => [])}
         />
     </>
   );

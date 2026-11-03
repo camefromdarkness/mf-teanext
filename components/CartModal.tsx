@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { useState } from "react";
 import type { Tea } from "@/data/teas";
 import type { CartLine } from "@/components/types";
 import { discountedPrice, formatPrice, getTeaImages } from "@/components/TeaCard";
@@ -12,6 +14,7 @@ type CartModalProps = {
   onClose: () => void;
   onOpenTea: (tea: Tea) => void;
   onQuantityChange: (id: number, quantity: number) => void;
+  onOrderCreated: () => void;
 };
 
 function pluralize(count: number) {
@@ -29,7 +32,14 @@ export default function CartModal({
   onClose,
   onOpenTea,
   onQuantityChange,
+  onOrderCreated,
 }: CartModalProps) {
+  const [submitting, setSubmitting] = useState(false);
+  const [checkoutState, setCheckoutState] = useState<{
+    message: string;
+    href?: string;
+    linkLabel?: string;
+  } | null>(null);
   const lines = cart.flatMap((line) => {
     const tea = teas.find((item) => item.id === line.id);
     return tea ? [{ ...line, tea }] : [];
@@ -45,21 +55,114 @@ export default function CartModal({
   );
   const hasDiscount = lines.some((line) => line.tea.discountPercent > 0);
 
-  function checkout() {
+  function close() {
+    setCheckoutState(null);
+    onClose();
+  }
+
+  async function checkout() {
     if (!lines.length) return;
-    const message = [
-      "Здравствуйте! Хочу оформить заказ:",
-      "",
-      ...lines.map(
-        ({ tea, quantity }, index) =>
-          `${index + 1}. ${tea.name} — ${quantity} шт. × ${formatPrice(discountedPrice(tea))} ${tea.unit} = ${formatPrice(discountedPrice(tea) * quantity)} ₽`,
-      ),
-    ].join("\n");
-    window.open(
-      `https://t.me/mf_administration?text=${encodeURIComponent(message)}`,
-      "_blank",
-      "noopener,noreferrer",
-    );
+    setSubmitting(true);
+    setCheckoutState(null);
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: lines.map(({ tea, quantity }) => ({
+            id: tea.id,
+            quantity,
+          })),
+        }),
+      });
+      const result: unknown = await response.json();
+      if (!response.ok) {
+        const errorMessage =
+          typeof result === "object" &&
+          result !== null &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "Не удалось создать заказ.";
+        const code =
+          typeof result === "object" &&
+          result !== null &&
+          "code" in result &&
+          typeof result.code === "string"
+            ? result.code
+            : "";
+        setCheckoutState({
+          message: errorMessage,
+          ...(code === "AUTH_REQUIRED"
+            ? {
+                href: "/auth/signin?callbackUrl=%2Faccount",
+                linkLabel: "Войти в аккаунт",
+              }
+            : code === "PROFILE_REQUIRED"
+              ? { href: "/account", linkLabel: "Добавить телефон в профиле" }
+              : {}),
+        });
+        return;
+      }
+
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("orderId" in result) ||
+        typeof result.orderId !== "string" ||
+        !("name" in result) ||
+        !(typeof result.name === "string" || result.name === null) ||
+        !("phoneNumber" in result) ||
+        typeof result.phoneNumber !== "string" ||
+        !("total" in result) ||
+        typeof result.total !== "number" ||
+        !("items" in result) ||
+        !Array.isArray(result.items)
+      ) {
+        throw new Error("Сервер вернул некорректные данные заказа.");
+      }
+
+      const message = [
+        `Здравствуйте! Хочу подтвердить заказ №${result.orderId.slice(-8).toUpperCase()}.`,
+        `Имя: ${result.name ?? "не указано"}`,
+        `Телефон: ${result.phoneNumber}`,
+        "",
+        ...result.items.map((item, index) => {
+          if (
+            typeof item !== "object" ||
+            item === null ||
+            !("name" in item) ||
+            typeof item.name !== "string" ||
+            !("quantity" in item) ||
+            typeof item.quantity !== "number" ||
+            !("unitPrice" in item) ||
+            typeof item.unitPrice !== "number" ||
+            !("unit" in item) ||
+            typeof item.unit !== "string"
+          ) {
+            throw new Error("Сервер вернул некорректный состав заказа.");
+          }
+          const itemTotal = item.unitPrice * item.quantity;
+          return `${index + 1}. ${item.name} — ${item.quantity} шт. × ${formatPrice(item.unitPrice)} ₽ ${item.unit} = ${formatPrice(itemTotal)} ₽`;
+        }),
+        "",
+        `Итого: ${formatPrice(result.total)} ₽`,
+      ].join("\n");
+      const telegramUrl = `https://t.me/mf_administration?text=${encodeURIComponent(message)}`;
+      setCheckoutState({
+        message: "Заказ сохранён в истории. Чтобы магазин получил заявку, отправьте сообщение в Telegram.",
+        href: telegramUrl,
+        linkLabel: "Перейти в Telegram и отправить заказ",
+      });
+      onOrderCreated();
+    } catch (error) {
+      console.error("Не удалось оформить заказ.", error);
+      setCheckoutState({
+        message: "Не удалось оформить заказ. Проверьте соединение и попробуйте ещё раз.",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -67,7 +170,7 @@ export default function CartModal({
       className={`cart-modal-overlay${open ? " active" : ""}`}
       aria-hidden={!open}
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <section
@@ -80,7 +183,7 @@ export default function CartModal({
           type="button"
           className="cart-modal-close"
           aria-label="Закрыть корзину"
-          onClick={onClose}
+          onClick={close}
           tabIndex={open ? 0 : -1}
         >
           <svg
@@ -194,11 +297,28 @@ export default function CartModal({
           <button
             type="button"
             className="cart-checkout-btn"
-            disabled={lines.length === 0}
+            disabled={lines.length === 0 || submitting}
             onClick={checkout}
           >
-            Оформить заказ
+            {submitting ? "Оформляем…" : "Оформить заказ"}
           </button>
+          {checkoutState && (
+            <div className="cart-checkout-result" role="status">
+              <p>{checkoutState.message}</p>
+              {checkoutState.href &&
+                (checkoutState.href.startsWith("https://") ? (
+                  <a
+                    href={checkoutState.href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {checkoutState.linkLabel}
+                  </a>
+                ) : (
+                  <Link href={checkoutState.href}>{checkoutState.linkLabel}</Link>
+                ))}
+            </div>
+          )}
         </div>
       </section>
     </div>
