@@ -181,7 +181,7 @@ const telegramProvider: OIDCConfig<TelegramProfile> = {
         : undefined,
     },
   },
-  checks: ["pkce", "state", "nonce"],
+  checks: ["pkce", "nonce"],
   idToken: true,
   profile(profile) {
     return {
