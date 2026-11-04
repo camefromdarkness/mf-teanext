@@ -3,10 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
+  Fragment,
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type DragEvent,
   type FormEvent,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -150,6 +152,14 @@ export default function AdminPanel({
   const [moyskladSearchBusy, setMoyskladSearchBusy] = useState(false);
   const [moyskladSearchError, setMoyskladSearchError] = useState("");
   const [draggedTeaId, setDraggedTeaId] = useState<number | null>(null);
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const productsListRef = useRef<HTMLElement | null>(null);
+  const dragStateRef = useRef<{
+    teaId: number;
+    pointerId: number;
+    dropIndex: number;
+    clientY: number;
+  } | null>(null);
   const [teaPendingDeletion, setTeaPendingDeletion] = useState<AdminTea | null>(null);
   const [activeTab, setActiveTab] = useState<"catalog" | "orders">("catalog");
   const [orders, setOrders] = useState<AdminOrder[]>([]);
@@ -424,16 +434,23 @@ export default function AdminPanel({
     }
   }
 
-  async function reorderTea(sourceId: number, targetId: number) {
-    if (sourceId === targetId || busy) return;
+  async function reorderTea(sourceId: number, targetIndex: number) {
+    if (busy) return;
     const previousTeas = teas;
     const sourceIndex = teas.findIndex((tea) => tea.id === sourceId);
-    const targetIndex = teas.findIndex((tea) => tea.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) return;
+    if (sourceIndex < 0) return;
 
     const reordered = [...teas];
     const [movedTea] = reordered.splice(sourceIndex, 1);
-    reordered.splice(targetIndex, 0, movedTea);
+    const insertionIndex = Math.max(
+      0,
+      Math.min(
+        targetIndex > sourceIndex ? targetIndex - 1 : targetIndex,
+        reordered.length,
+      ),
+    );
+    if (insertionIndex === sourceIndex) return;
+    reordered.splice(insertionIndex, 0, movedTea);
     const orderedTeas = reordered.map((tea, sortOrder) => ({
       ...tea,
       sortOrder,
@@ -462,18 +479,77 @@ export default function AdminPanel({
     }
   }
 
-  function startDraggingTea(event: DragEvent<HTMLButtonElement>, teaId: number) {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(teaId));
+  const getDropIndex = useCallback((clientY: number) => {
+    const rows = productsListRef.current?.querySelectorAll<HTMLElement>(
+      "[data-tea-id]",
+    );
+    if (!rows) return teas.length;
+
+    for (let index = 0; index < rows.length; index += 1) {
+      const bounds = rows[index].getBoundingClientRect();
+      if (clientY < bounds.top + bounds.height / 2) return index;
+    }
+    return rows.length;
+  }, [teas.length]);
+
+  function startDraggingTea(
+    event: React.PointerEvent<HTMLButtonElement>,
+    teaId: number,
+  ) {
+    if (busy || event.button !== 0) return;
+    event.preventDefault();
+    const index = getDropIndex(event.clientY);
+    dragStateRef.current = {
+      teaId,
+      pointerId: event.pointerId,
+      dropIndex: index,
+      clientY: event.clientY,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
     setDraggedTeaId(teaId);
+    setDropIndex(index);
   }
 
-  function dropTea(event: DragEvent<HTMLDivElement>, targetId: number) {
-    event.preventDefault();
-    const sourceId = Number(event.dataTransfer.getData("text/plain"));
-    setDraggedTeaId(null);
-    if (Number.isSafeInteger(sourceId)) void reorderTea(sourceId, targetId);
+  function moveDraggedTea(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.clientY = event.clientY;
+    drag.dropIndex = getDropIndex(event.clientY);
+    setDropIndex(drag.dropIndex);
   }
+
+  function finishDraggingTea(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = dragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragStateRef.current = null;
+    setDraggedTeaId(null);
+    setDropIndex(null);
+    void reorderTea(drag.teaId, drag.dropIndex);
+  }
+
+  function cancelDraggingTea(event: React.PointerEvent<HTMLButtonElement>) {
+    if (dragStateRef.current?.pointerId !== event.pointerId) return;
+    dragStateRef.current = null;
+    setDraggedTeaId(null);
+    setDropIndex(null);
+  }
+
+  useEffect(() => {
+    if (draggedTeaId === null) return;
+
+    function scrollDuringDrag(event: WheelEvent) {
+      const list = productsListRef.current;
+      const drag = dragStateRef.current;
+      if (!list || !drag) return;
+      event.preventDefault();
+      list.scrollTop += event.deltaY;
+      drag.dropIndex = getDropIndex(drag.clientY);
+      setDropIndex(drag.dropIndex);
+    }
+
+    window.addEventListener("wheel", scrollDuringDrag, { passive: false });
+    return () => window.removeEventListener("wheel", scrollDuringDrag);
+  }, [draggedTeaId, getDropIndex]);
 
   function startNewTea() {
     setSelectedId("");
@@ -624,14 +700,7 @@ export default function AdminPanel({
         id="admin-catalog-panel"
         aria-labelledby="admin-catalog-tab"
       >
-        <section
-          className="admin-products"
-          onWheel={(event) => {
-            if (draggedTeaId === null) return;
-            event.currentTarget.scrollTop += event.deltaY;
-            event.preventDefault();
-          }}
-        >
+        <section className="admin-products" ref={productsListRef}>
           <button
             className={`admin-product-row${selectedId === "" ? " selected" : ""}`}
             type="button"
@@ -639,42 +708,48 @@ export default function AdminPanel({
           >
             + Добавить чай
           </button>
-          {teas.map((tea) => (
-            <div
-              className={`admin-product-row${selectedId === String(tea.id) ? " selected" : ""}${draggedTeaId === tea.id ? " dragging" : ""}`}
-              key={tea.id}
-              onDragOver={(event) => {
-                event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-              }}
-              onDrop={(event) => dropTea(event, tea.id)}
-            >
-              <button
-                type="button"
-                className="admin-drag-handle"
-                aria-label={`Перетащить «${tea.name}» для изменения порядка`}
-                draggable
-                disabled={busy}
-                onDragStart={(event) => startDraggingTea(event, tea.id)}
-                onDragEnd={() => setDraggedTeaId(null)}
+          {teas.map((tea, index) => (
+            <Fragment key={tea.id}>
+              <div
+                className={`admin-drop-indicator${dropIndex === index ? " active" : ""}`}
+                aria-hidden="true"
+              />
+              <div
+                className={`admin-product-row${selectedId === String(tea.id) ? " selected" : ""}${draggedTeaId === tea.id ? " dragging" : ""}`}
+                data-tea-id={tea.id}
               >
-                ⠿
-              </button>
-              <button type="button" onClick={() => selectTea(tea)}>
-                {tea.name}
-                <small>{tea.isActive ? "Опубликован" : "Скрыт"}</small>
-              </button>
-              <button
-                type="button"
-                className="admin-visibility-button"
-                aria-label={tea.isActive ? "Скрыть чай" : "Опубликовать чай"}
-                disabled={busy}
-                onClick={() => toggleTea(tea)}
-              >
-                {tea.isActive ? "Скрыть" : "Показать"}
-              </button>
-            </div>
+                <button
+                  type="button"
+                  className="admin-drag-handle"
+                  aria-label={`Перетащить «${tea.name}» для изменения порядка`}
+                  disabled={busy}
+                  onPointerDown={(event) => startDraggingTea(event, tea.id)}
+                  onPointerMove={moveDraggedTea}
+                  onPointerUp={finishDraggingTea}
+                  onPointerCancel={cancelDraggingTea}
+                >
+                  ⠿
+                </button>
+                <button type="button" onClick={() => selectTea(tea)}>
+                  {tea.name}
+                  <small>{tea.isActive ? "Опубликован" : "Скрыт"}</small>
+                </button>
+                <button
+                  type="button"
+                  className="admin-visibility-button"
+                  aria-label={tea.isActive ? "Скрыть чай" : "Опубликовать чай"}
+                  disabled={busy}
+                  onClick={() => toggleTea(tea)}
+                >
+                  {tea.isActive ? "Скрыть" : "Показать"}
+                </button>
+              </div>
+            </Fragment>
           ))}
+          <div
+            className={`admin-drop-indicator${dropIndex === teas.length ? " active" : ""}`}
+            aria-hidden="true"
+          />
         </section>
         <form className="admin-editor" onSubmit={saveTea}>
           <h2>{editing ? "Редактировать чай" : "Новый чай"}</h2>

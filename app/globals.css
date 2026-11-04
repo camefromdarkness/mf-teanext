@@ -2151,6 +2151,30 @@
 
     .admin-product-row.selected { background: #17140e; }
     .admin-product-row.dragging { opacity: 0.45; }
+    .admin-drop-indicator {
+        position: relative;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+        transition: height 120ms ease;
+    }
+
+    .admin-drop-indicator.active {
+        display: grid;
+        height: 27px;
+        place-items: center;
+        border-top: 1px solid rgba(214, 189, 127, 0.28);
+        border-bottom: 1px solid rgba(214, 189, 127, 0.28);
+        background: linear-gradient(90deg, transparent, rgba(214, 189, 127, 0.12), transparent);
+        color: #d6bd7f;
+        font-size: 0.65rem;
+        letter-spacing: 0.15em;
+    }
+
+    .admin-drop-indicator.active::after {
+        content: "ВСТАВИТЬ СЮДА";
+    }
+
     .admin-product-row > button:nth-of-type(2) {
         flex: 1;
         padding: 0;
