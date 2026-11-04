@@ -8,6 +8,11 @@ import AccountProfileForm from "@/components/AccountProfileForm";
 import SignOutButton from "@/components/SignOutButton";
 import { prisma } from "@/lib/prisma";
 
+export const metadata = {
+  title: "Личный кабинет",
+  robots: { index: false, follow: false },
+};
+
 export default function AccountPage() {
   return (
     <Suspense fallback={<AccountLoading />}>

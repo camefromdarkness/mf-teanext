@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeRussianPhone } from "@/lib/phone";
 
 const API_URL = "https://api.moysklad.ru/api/remap/1.2";
 
@@ -195,13 +196,13 @@ function normalizePhone(phone: string) {
 }
 
 async function findOrCreateCounterparty(name: string | null, phone: string) {
-  const normalizedPhone = normalizePhone(phone);
-  if (!normalizedPhone) {
-    throw new MoyskladError("Для заказа нужен корректный номер телефона.");
+  const canonicalPhone = normalizeRussianPhone(phone);
+  if (!canonicalPhone) {
+    throw new MoyskladError("Для заказа нужен корректный российский номер телефона.");
   }
 
   const params = new URLSearchParams({
-    filter: `phone=${phone}`,
+    filter: `phone=${canonicalPhone}`,
     limit: "100",
   });
   const result = await request<MoyskladList<MoyskladEntity & { phone?: string }>>(
@@ -210,7 +211,7 @@ async function findOrCreateCounterparty(name: string | null, phone: string) {
   const matches = result.rows.filter(
     (counterparty) =>
       typeof counterparty.phone === "string" &&
-      normalizePhone(counterparty.phone) === normalizedPhone,
+      normalizePhone(counterparty.phone) === normalizePhone(canonicalPhone),
   );
   if (matches.length > 1) {
     throw new MoyskladError(
@@ -222,8 +223,9 @@ async function findOrCreateCounterparty(name: string | null, phone: string) {
   return request<MoyskladEntity>("/entity/counterparty", {
     method: "POST",
     body: JSON.stringify({
-      name: name?.trim() || phone,
-      phone,
+      companyType: "individual",
+      name: name?.trim() || canonicalPhone,
+      phone: canonicalPhone,
     }),
   });
 }

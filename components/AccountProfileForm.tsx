@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  formatRussianPhoneInput,
+  normalizeRussianPhone,
+} from "@/lib/phone";
 
 type AccountProfileFormProps = {
   name: string;
@@ -22,7 +26,9 @@ export default function AccountProfileForm({
 }: AccountProfileFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialName);
-  const [phoneNumber, setPhoneNumber] = useState(initialPhoneNumber);
+  const [phoneNumber, setPhoneNumber] = useState(
+    formatRussianPhoneInput(initialPhoneNumber),
+  );
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -44,7 +50,7 @@ export default function AccountProfileForm({
       }
 
       setName(result.name ?? "");
-      setPhoneNumber(result.phoneNumber ?? "");
+      setPhoneNumber(formatRussianPhoneInput(result.phoneNumber ?? ""));
       setMessage("Профиль сохранён.");
       router.refresh();
     } catch (error) {
@@ -83,16 +89,25 @@ export default function AccountProfileForm({
           <input
             autoComplete="tel"
             inputMode="tel"
-            maxLength={32}
+            maxLength={18}
             name="phoneNumber"
-            onChange={(event) => setPhoneNumber(event.target.value)}
+            onChange={(event) =>
+              setPhoneNumber(formatRussianPhoneInput(event.target.value))
+            }
+            onBlur={() => {
+              const normalized = normalizeRussianPhone(phoneNumber);
+              if (normalized) {
+                setPhoneNumber(formatRussianPhoneInput(normalized));
+              }
+            }}
             placeholder="+7 999 123-45-67"
             type="tel"
             value={phoneNumber}
           />
           <span className="account-field-hint">
-            Telegram не передаёт сайту ваш номер автоматически. Укажите его для
-            связи по заказу.
+            Введите российский номер с +7, 8 или без кода страны. Мы приведём
+            его к формату +7 (999) 123-45-67. Telegram не передаёт номер
+            автоматически.
           </span>
         </label>
         <div className="account-uuid">

@@ -8,6 +8,7 @@ import {
   moyskladIsConfigured,
   MoyskladError,
 } from "@/lib/moysklad";
+import { normalizeRussianPhone } from "@/lib/phone";
 import { prisma } from "@/lib/prisma";
 
 type CartItemInput = {
@@ -170,7 +171,17 @@ export async function POST(request: Request) {
       );
     }
     const contactName = user.name;
-    const phoneNumber = user.phoneNumber;
+    const phoneNumber = normalizeRussianPhone(user.phoneNumber);
+    if (!phoneNumber) {
+      return NextResponse.json(
+        {
+          error:
+            "Обновите номер телефона в профиле. Укажите корректный российский номер.",
+          code: "PROFILE_REQUIRED",
+        },
+        { status: 409 },
+      );
+    }
 
     let order = await prisma.order.findUnique({
       where: { checkoutKey: body.checkoutKey },

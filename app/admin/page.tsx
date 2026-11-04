@@ -4,6 +4,11 @@ import AdminPanel from "@/components/AdminPanel";
 import { isAdminAuthenticated } from "@/lib/admin-auth";
 import { getAllTeas } from "@/lib/teas";
 
+export const metadata = {
+  title: "Админ-панель",
+  robots: { index: false, follow: false },
+};
+
 export default function AdminPage() {
   return (
     <Suspense

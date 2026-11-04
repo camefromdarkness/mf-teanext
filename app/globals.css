@@ -1524,21 +1524,42 @@
         }
 
         .cart-icon {
-            top: 16px;
-            right: 16px;
+            top: 14px;
+            right: 14px;
             bottom: auto;
-            width: 52px;
-            height: 52px;
+            width: 44px;
+            height: 44px;
         }
 
         .cart-icon svg {
-            width: 25px;
-            height: 25px;
+            width: 22px;
+            height: 22px;
         }
 
-        .brand { gap: 12px; }
-        .logo { height: 45px; }
-        .brand-name { font-size: 1.4em; letter-spacing: 2px; }
+        .account-link {
+            top: 14px;
+            right: auto;
+            left: 14px;
+            width: 44px;
+            height: 44px;
+            justify-content: center;
+            padding: 0;
+        }
+
+        .account-link span {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+        }
+
+        .account-link svg { width: 21px; height: 21px; }
+
+        .brand { gap: 8px; }
+        .logo { height: 40px; }
+        .brand-name { font-size: 1.15em; letter-spacing: 1px; }
 
         .catalog { padding: 30px 16px; gap: 14px; }
         .product-card .image-wrapper { height: 200px; }
@@ -1769,6 +1790,12 @@
             padding-right: 60px;
         }
 
+        @media (max-width: 360px) {
+            .brand { gap: 6px; }
+            .logo { height: 36px; }
+            .brand-name { font-size: 1em; letter-spacing: 0.6px; }
+        }
+
         .filter-header .search-box { max-width: none; }
 
         .hamburger { display: flex; }
@@ -1927,7 +1954,8 @@
     }
 
     .admin-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
-    .admin-page textarea {
+    .admin-page textarea,
+    .admin-page select {
         width: 100%;
         border: 1px solid #303030;
         border-radius: 4px;
@@ -1939,7 +1967,8 @@
     }
 
     .admin-page input:focus,
-    .admin-page textarea:focus {
+    .admin-page textarea:focus,
+    .admin-page select:focus {
         outline: 1px solid #d6bd7f;
         border-color: #d6bd7f;
     }
@@ -1960,6 +1989,93 @@
         background: #d6bd7f;
         color: #080808;
         font-weight: 600;
+    }
+
+    .admin-delete-button {
+        width: 100%;
+        padding: 11px 16px;
+        border: 1px solid #783e3e;
+        border-radius: 4px;
+        background: transparent;
+        color: #ff9a9a;
+    }
+
+    .admin-delete-button:hover:not(:disabled) {
+        background: #291515;
+        border-color: #a64e4e;
+    }
+
+    .admin-confirm-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.82);
+        backdrop-filter: blur(5px);
+    }
+
+    .admin-confirm-dialog {
+        width: min(100%, 440px);
+        padding: 30px;
+        border: 1px solid #39352a;
+        border-radius: 6px;
+        background: linear-gradient(145deg, #12110e, #080808 70%);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+        animation: confirm-dialog-enter 180ms ease-out;
+    }
+
+    .admin-confirm-dialog .tea-category-label {
+        margin: 0 0 12px;
+        color: #d6bd7f;
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+    }
+
+    .admin-confirm-dialog h2 {
+        margin: 0 0 12px;
+        color: #f3ead4;
+        font-size: 1.35rem;
+        font-weight: 500;
+    }
+
+    .admin-confirm-dialog > p:not(.tea-category-label) {
+        margin: 0;
+        color: #aaa59a;
+        line-height: 1.65;
+    }
+
+    .admin-confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 26px;
+    }
+
+    .admin-confirm-actions .admin-secondary-button,
+    .admin-confirm-delete-button {
+        min-height: 42px;
+        padding: 9px 16px;
+        border: 1px solid #383838;
+        border-radius: 4px;
+        background: transparent;
+        color: #ddd;
+    }
+
+    .admin-confirm-delete-button {
+        border-color: #a64e4e;
+        background: #783e3e;
+        color: #fff;
+    }
+
+    .admin-confirm-delete-button:hover:not(:disabled) {
+        background: #914747;
+    }
+
+    @keyframes confirm-dialog-enter {
+        from { opacity: 0; transform: translateY(8px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
     }
 
     .admin-page button:disabled,
@@ -2010,6 +2126,13 @@
     .admin-editor {
         border: 1px solid #262626;
         background: #080808;
+    }
+
+    .admin-products {
+        max-height: min(72vh, 760px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-color: #48443a #101010;
     }
 
     .admin-product-row {
@@ -2155,6 +2278,7 @@
         .admin-fields-grid { grid-template-columns: 1fr; }
         .admin-editor { padding: 17px; }
         .admin-image-heading { align-items: flex-start; flex-direction: column; }
+        .admin-confirm-dialog { padding: 24px 20px; }
         .admin-orders-heading,
         .admin-order-heading,
         .admin-order-footer { align-items: flex-start; flex-direction: column; }

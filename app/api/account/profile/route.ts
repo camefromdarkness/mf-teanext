@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { normalizeRussianPhone } from "@/lib/phone";
 
 export async function GET() {
   const session = await auth();
@@ -47,23 +48,22 @@ export async function PATCH(request: Request) {
   }
 
   const name = body.name.trim();
-  const phoneNumber = body.phoneNumber.trim();
-  const digits = phoneNumber.replace(/\D/g, "");
+  const rawPhoneNumber = body.phoneNumber.trim();
   if (name.length > 120) {
     return NextResponse.json(
       { error: "Имя должно быть не длиннее 120 символов." },
       { status: 400 },
     );
   }
-  if (
-    phoneNumber &&
-    (phoneNumber.length > 32 ||
-      !/^\+?[\d\s().-]+$/.test(phoneNumber) ||
-      digits.length < 7 ||
-      digits.length > 15)
-  ) {
+  const phoneNumber = rawPhoneNumber
+    ? normalizeRussianPhone(rawPhoneNumber)
+    : "";
+  if (rawPhoneNumber && !phoneNumber) {
     return NextResponse.json(
-      { error: "Проверьте номер: введите от 7 до 15 цифр." },
+      {
+        error:
+          "Введите корректный российский номер: 10 цифр, начиная с 3–9. Подойдут форматы +7, 8 или номер без кода страны.",
+      },
       { status: 400 },
     );
   }

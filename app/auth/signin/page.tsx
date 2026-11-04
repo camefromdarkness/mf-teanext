@@ -3,6 +3,11 @@ import { Suspense } from "react";
 import { connection } from "next/server";
 import SignInOptions from "@/components/SignInOptions";
 
+export const metadata = {
+  title: "Вход в личный кабинет",
+  robots: { index: false, follow: false },
+};
+
 export default function SignInPage() {
   return (
     <Suspense fallback={<SignInLoading />}>

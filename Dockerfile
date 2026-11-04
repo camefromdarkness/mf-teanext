@@ -18,10 +18,12 @@ RUN npm run db:generate
 CMD ["npm", "run", "db:deploy"]
 
 FROM base AS builder
+ARG SITE_URL
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY . .
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build?schema=public"
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV SITE_URL=${SITE_URL}
 RUN npm run db:generate
 RUN npm run build
 

@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   useEffect,
+  useMemo,
   useState,
   type DragEvent,
   type FormEvent,
@@ -135,6 +136,7 @@ export default function AdminPanel({
   const [teas, setTeas] = useState(initialTeas);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
+  const [creatingCategory, setCreatingCategory] = useState(false);
   const [detailsText, setDetailsText] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -148,12 +150,26 @@ export default function AdminPanel({
   const [moyskladSearchBusy, setMoyskladSearchBusy] = useState(false);
   const [moyskladSearchError, setMoyskladSearchError] = useState("");
   const [draggedTeaId, setDraggedTeaId] = useState<number | null>(null);
+  const [teaPendingDeletion, setTeaPendingDeletion] = useState<AdminTea | null>(null);
   const [activeTab, setActiveTab] = useState<"catalog" | "orders">("catalog");
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const editing = selectedId !== "";
+  const categories = useMemo(
+    () => [...new Set(teas.map((tea) => tea.type.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru")),
+    [teas],
+  );
+
+  useEffect(() => {
+    if (!teaPendingDeletion) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !busy) setTeaPendingDeletion(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [teaPendingDeletion, busy]);
 
   async function readError(response: Response) {
     const body = (await response.json().catch(() => null)) as
@@ -377,6 +393,37 @@ export default function AdminPanel({
     }
   }
 
+  async function deleteTea(tea: AdminTea) {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/teas", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: tea.id }),
+      });
+      if (!response.ok) {
+        setError(await readError(response));
+        return;
+      }
+
+      setTeas((current) => current.filter((item) => item.id !== tea.id));
+      setSelectedId("");
+      setDraft(EMPTY_DRAFT);
+      setDetailsText("");
+      setSelectedMoyskladProduct(null);
+      setMoyskladProducts([]);
+      setMoyskladSearch("");
+      setCreatingCategory(false);
+      setTeaPendingDeletion(null);
+    } catch (requestError) {
+      console.error("Не удалось удалить товар из каталога.", requestError);
+      setError("Не удалось удалить товар.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function reorderTea(sourceId: number, targetId: number) {
     if (sourceId === targetId || busy) return;
     const previousTeas = teas;
@@ -577,7 +624,14 @@ export default function AdminPanel({
         id="admin-catalog-panel"
         aria-labelledby="admin-catalog-tab"
       >
-        <section className="admin-products">
+        <section
+          className="admin-products"
+          onWheel={(event) => {
+            if (draggedTeaId === null) return;
+            event.currentTarget.scrollTop += event.deltaY;
+            event.preventDefault();
+          }}
+        >
           <button
             className={`admin-product-row${selectedId === "" ? " selected" : ""}`}
             type="button"
@@ -627,7 +681,47 @@ export default function AdminPanel({
           <div className="admin-fields-grid">
             <label>
               Категория
-              <input value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value })} required />
+              <select
+                value={creatingCategory ? "__new__" : draft.type}
+                onChange={(event) => {
+                  if (event.target.value === "__new__") {
+                    setCreatingCategory(true);
+                    setDraft((current) => ({ ...current, type: "" }));
+                    return;
+                  }
+                  setCreatingCategory(false);
+                  setDraft((current) => ({
+                    ...current,
+                    type: event.target.value,
+                  }));
+                }}
+                required
+              >
+                <option value="" disabled>
+                  Выберите категорию
+                </option>
+                {categories.map((category) => (
+                  <option value={category} key={category}>
+                    {category}
+                  </option>
+                ))}
+                <option value="__new__">+ Создать категорию</option>
+              </select>
+              {creatingCategory && (
+                <input
+                  autoFocus
+                  maxLength={100}
+                  placeholder="Название новой категории"
+                  value={draft.type}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      type: event.target.value,
+                    }))
+                  }
+                  required
+                />
+              )}
             </label>
             <label>
               Цена, ₽
@@ -864,6 +958,18 @@ export default function AdminPanel({
           >
             {busy ? "Сохранение…" : "Сохранить чай"}
           </button>
+          {editing && (
+            <button
+              className="admin-delete-button"
+              type="button"
+              onClick={() => setTeaPendingDeletion(
+                teas.find((item) => item.id === Number(selectedId)) ?? null,
+              )}
+              disabled={busy}
+            >
+              Удалить товар
+            </button>
+          )}
         </form>
       </div>
       ) : (
@@ -956,6 +1062,50 @@ export default function AdminPanel({
             </div>
           )}
         </section>
+      )}
+      {teaPendingDeletion && (
+        <div
+          className="admin-confirm-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !busy) {
+              setTeaPendingDeletion(null);
+            }
+          }}
+        >
+          <section
+            className="admin-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-tea-title"
+            aria-describedby="delete-tea-description"
+          >
+            <p className="tea-category-label">УДАЛЕНИЕ ТОВАРА</p>
+            <h2 id="delete-tea-title">Удалить чай из каталога?</h2>
+            <p id="delete-tea-description">
+              Вы уверены, что хотите удалить «{teaPendingDeletion.name}»?
+              Действие нельзя отменить. История заказов и фотографии сохранятся.
+            </p>
+            <div className="admin-confirm-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => setTeaPendingDeletion(null)}
+                disabled={busy}
+                autoFocus
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className="admin-confirm-delete-button"
+                onClick={() => void deleteTea(teaPendingDeletion)}
+                disabled={busy}
+              >
+                {busy ? "Удаление…" : "Да, удалить"}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
     </main>
   );

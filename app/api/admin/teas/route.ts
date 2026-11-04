@@ -248,3 +248,42 @@ export async function PATCH(request: Request) {
     );
   }
 }
+
+export async function DELETE(request: Request) {
+  if (!(await isAdminAuthenticated())) {
+    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
+  }
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("id" in body) ||
+    !Number.isSafeInteger(body.id) ||
+    (body.id as number) < 1
+  ) {
+    return NextResponse.json({ error: "Некорректный идентификатор товара." }, { status: 400 });
+  }
+
+  try {
+    await prisma.tea.delete({ where: { id: body.id as number } });
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2025"
+    ) {
+      return NextResponse.json({ error: "Товар не найден." }, { status: 404 });
+    }
+    console.error("Не удалось удалить товар из каталога.", error);
+    return NextResponse.json(
+      { error: "Не удалось удалить товар из каталога." },
+      { status: 500 },
+    );
+  }
+}
