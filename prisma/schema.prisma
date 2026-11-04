@@ -14,6 +14,7 @@ enum UserRole {
 
 enum OrderStatus {
   PENDING
+  REJECTED
 }
 
 model User {
@@ -67,20 +68,21 @@ model VerificationToken {
 }
 
 model Tea {
-  id          Int        @id @default(autoincrement())
-  type        String
-  name        String
-  shortDesc   String
-  price       Int
-  discountPercent Int @default(20)
-  unit        String
-  description String     @db.Text
-  details     Json
-  isActive    Boolean    @default(true)
-  sortOrder   Int        @default(0)
-  images      TeaImage[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id                   Int        @id @default(autoincrement())
+  moyskladAssortmentId String?    @unique
+  type                 String
+  name                 String
+  shortDesc            String
+  price                Int
+  discountPercent      Int        @default(20)
+  unit                 String
+  description          String     @db.Text
+  details              Json
+  isActive             Boolean    @default(true)
+  sortOrder            Int        @default(0)
+  images               TeaImage[]
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
 
   @@index([isActive, sortOrder])
 }
@@ -100,28 +102,35 @@ model TeaImage {
 }
 
 model Order {
-  id            String      @id @default(cuid())
-  userId        String
-  contactName   String?
-  phoneNumber   String      @db.VarChar(32)
-  status        OrderStatus @default(PENDING)
-  total         Int
-  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  items         OrderItem[]
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  id                   String      @id @default(cuid())
+  checkoutKey          String?     @unique
+  moyskladOrderId      String?     @unique
+  moyskladSyncRequired Boolean     @default(false)
+  userId               String?
+  contactName          String?
+  phoneNumber          String      @db.VarChar(32)
+  status               OrderStatus @default(PENDING)
+  moyskladStatus       String?
+  moyskladStatusType   String?
+  total                Int
+  user                 User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items                OrderItem[]
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
   @@index([userId, createdAt])
 }
 
 model OrderItem {
-  id        String @id @default(cuid())
-  orderId   String
-  teaName   String
-  teaUnit   String
-  quantity  Int
-  unitPrice Int
-  order     Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id                   String  @id @default(cuid())
+  orderId              String
+  teaId                Int?
+  moyskladAssortmentId String?
+  teaName              String
+  teaUnit              String
+  quantity             Int
+  unitPrice            Int
+  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }

@@ -9,6 +9,8 @@ export type TeaImage = {
 
 export type Tea = {
   id: number;
+  moyskladAssortmentId: string | null;
+  availableStock?: number | null;
   type: string;
   name: string;
   shortDesc: string;

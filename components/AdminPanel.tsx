@@ -2,17 +2,102 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type DragEvent,
+  type FormEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import type { Tea, TeaImage } from "@/data/teas";
 
 type AdminTea = Tea & { isActive: boolean };
-type Draft = Omit<Tea, "id" | "images" | "isActive" | "sortOrder" | "discountPercent"> & {
+type Draft = Omit<
+  Tea,
+  "id" | "images" | "isActive" | "sortOrder" | "discountPercent" | "availableStock"
+> & {
   images: TeaImage[];
   discountPercent: string;
 };
 
+type MoyskladProduct = { id: string; name: string; code: string };
+
+type AdminOrder = {
+  id: string;
+  contactName: string | null;
+  phoneNumber: string;
+  status: string;
+  total: number;
+  createdAt: string;
+  moyskladOrderId: string | null;
+  moyskladStatus: string | null;
+  moyskladStatusType: string | null;
+  items: {
+    id: string;
+    teaName: string;
+    teaUnit: string;
+    quantity: number;
+    unitPrice: number;
+  }[];
+};
+
+function isUnsuccessfulMoyskladStatus(
+  status: string | null,
+  statusType: string | null,
+) {
+  return (
+    statusType === "Unsuccessful" ||
+    ["Отменен", "Отклонен", "Удален", "Возврат"].includes(status ?? "")
+  );
+}
+
+function isAdminOrder(value: unknown): value is AdminOrder {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("id" in value) ||
+    typeof value.id !== "string" ||
+    !("contactName" in value) ||
+    !(typeof value.contactName === "string" || value.contactName === null) ||
+    !("phoneNumber" in value) ||
+    typeof value.phoneNumber !== "string" ||
+    !("status" in value) ||
+    typeof value.status !== "string" ||
+    !("total" in value) ||
+    typeof value.total !== "number" ||
+    !("createdAt" in value) ||
+    typeof value.createdAt !== "string" ||
+    !("moyskladOrderId" in value) ||
+    !(typeof value.moyskladOrderId === "string" || value.moyskladOrderId === null) ||
+    !("moyskladStatus" in value) ||
+    !(typeof value.moyskladStatus === "string" || value.moyskladStatus === null) ||
+    !("moyskladStatusType" in value) ||
+    !(typeof value.moyskladStatusType === "string" || value.moyskladStatusType === null) ||
+    !("items" in value) ||
+    !Array.isArray(value.items)
+  ) {
+    return false;
+  }
+
+  return value.items.every(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      "id" in item &&
+      typeof item.id === "string" &&
+      "teaName" in item &&
+      typeof item.teaName === "string" &&
+      "teaUnit" in item &&
+      typeof item.teaUnit === "string" &&
+      "quantity" in item &&
+      typeof item.quantity === "number" &&
+      "unitPrice" in item &&
+      typeof item.unitPrice === "number",
+  );
+}
+
 const EMPTY_DRAFT: Draft = {
+  moyskladAssortmentId: null,
   type: "",
   name: "",
   shortDesc: "",
@@ -26,6 +111,7 @@ const EMPTY_DRAFT: Draft = {
 
 function draftFromTea(tea: AdminTea): Draft {
   return {
+    moyskladAssortmentId: tea.moyskladAssortmentId,
     type: tea.type,
     name: tea.name,
     shortDesc: tea.shortDesc,
@@ -55,6 +141,18 @@ export default function AdminPanel({
   const [error, setError] = useState("");
   const [mediaImages, setMediaImages] = useState<{ url: string; alt: string }[]>([]);
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [moyskladSearch, setMoyskladSearch] = useState("");
+  const [moyskladProducts, setMoyskladProducts] = useState<MoyskladProduct[]>([]);
+  const [selectedMoyskladProduct, setSelectedMoyskladProduct] =
+    useState<MoyskladProduct | null>(null);
+  const [moyskladSearchBusy, setMoyskladSearchBusy] = useState(false);
+  const [moyskladSearchError, setMoyskladSearchError] = useState("");
+  const [draggedTeaId, setDraggedTeaId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"catalog" | "orders">("catalog");
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState("");
   const editing = selectedId !== "";
 
   async function readError(response: Response) {
@@ -102,6 +200,29 @@ export default function AdminPanel({
     }
   }
 
+  async function loadOrders() {
+    setOrdersLoading(true);
+    setOrdersError("");
+    try {
+      const response = await fetch("/api/admin/orders", { cache: "no-store" });
+      if (!response.ok) {
+        setOrdersError(await readError(response));
+        return;
+      }
+      const result: unknown = await response.json();
+      if (!Array.isArray(result) || !result.every(isAdminOrder)) {
+        throw new Error("Сервер вернул некорректный список заказов.");
+      }
+      setOrders(result);
+      setOrdersLoaded(true);
+    } catch (requestError) {
+      console.error("Не удалось загрузить заказы.", requestError);
+      setOrdersError("Не удалось загрузить заказы.");
+    } finally {
+      setOrdersLoading(false);
+    }
+  }
+
   async function uploadImage(file: File) {
     setBusy(true);
     setError("");
@@ -145,6 +266,10 @@ export default function AdminPanel({
 
   async function saveTea(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!draft.moyskladAssortmentId) {
+      setError("Сначала выберите позицию в МойСклад.");
+      return;
+    }
     setBusy(true);
     setError("");
     const details = detailsText
@@ -185,6 +310,48 @@ export default function AdminPanel({
     }
   }
 
+  function selectMoyskladItem(product: MoyskladProduct) {
+    setSelectedMoyskladProduct(product);
+    setDraft((current) => ({
+      ...current,
+      moyskladAssortmentId: product.id,
+    }));
+    setMoyskladProducts([]);
+  }
+
+  useEffect(() => {
+    const query = moyskladSearch.trim();
+    if (query.length < 2) return;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(async () => {
+      setMoyskladSearchBusy(true);
+      setMoyskladSearchError("");
+      try {
+        const response = await fetch(
+          `/api/admin/moysklad/products?q=${encodeURIComponent(query)}`,
+          { signal: controller.signal },
+        );
+        if (!response.ok) {
+          setMoyskladSearchError(await readError(response));
+          return;
+        }
+        setMoyskladProducts((await response.json()) as MoyskladProduct[]);
+      } catch (requestError) {
+        if (controller.signal.aborted) return;
+        console.error("Не удалось выполнить поиск в МойСклад.", requestError);
+        setMoyskladSearchError("Не удалось подключиться к МойСклад.");
+      } finally {
+        if (!controller.signal.aborted) setMoyskladSearchBusy(false);
+      }
+    }, 350);
+
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [moyskladSearch]);
+
   async function toggleTea(tea: AdminTea) {
     setBusy(true);
     setError("");
@@ -210,16 +377,87 @@ export default function AdminPanel({
     }
   }
 
+  async function reorderTea(sourceId: number, targetId: number) {
+    if (sourceId === targetId || busy) return;
+    const previousTeas = teas;
+    const sourceIndex = teas.findIndex((tea) => tea.id === sourceId);
+    const targetIndex = teas.findIndex((tea) => tea.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+
+    const reordered = [...teas];
+    const [movedTea] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, movedTea);
+    const orderedTeas = reordered.map((tea, sortOrder) => ({
+      ...tea,
+      sortOrder,
+    }));
+    setTeas(orderedTeas);
+    setBusy(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/admin/teas/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: orderedTeas.map((tea) => tea.id) }),
+      });
+      if (!response.ok) {
+        setTeas(previousTeas);
+        setError(await readError(response));
+        return;
+      }
+    } catch (requestError) {
+      console.error("Не удалось сохранить порядок товаров.", requestError);
+      setTeas(previousTeas);
+      setError("Не удалось сохранить порядок товаров.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startDraggingTea(event: DragEvent<HTMLButtonElement>, teaId: number) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(teaId));
+    setDraggedTeaId(teaId);
+  }
+
+  function dropTea(event: DragEvent<HTMLDivElement>, targetId: number) {
+    event.preventDefault();
+    const sourceId = Number(event.dataTransfer.getData("text/plain"));
+    setDraggedTeaId(null);
+    if (Number.isSafeInteger(sourceId)) void reorderTea(sourceId, targetId);
+  }
+
   function startNewTea() {
     setSelectedId("");
     setDraft(EMPTY_DRAFT);
     setDetailsText("");
+    setSelectedMoyskladProduct(null);
+    setMoyskladProducts([]);
+    setMoyskladSearch("");
   }
 
   function selectTea(tea: AdminTea) {
     setSelectedId(String(tea.id));
     setDraft(draftFromTea(tea));
     setDetailsText(tea.details.map(([key, value]) => `${key} | ${value}`).join("\n"));
+    setSelectedMoyskladProduct(null);
+    setMoyskladProducts([]);
+    setMoyskladSearch("");
+    if (tea.moyskladAssortmentId) {
+      void fetch(
+        `/api/admin/moysklad/products?id=${encodeURIComponent(tea.moyskladAssortmentId)}`,
+      )
+        .then(async (response) => {
+          if (!response.ok) throw new Error(await readError(response));
+          const product = (await response.json()) as MoyskladProduct;
+          setSelectedMoyskladProduct(product);
+        })
+        .catch((requestError: unknown) => {
+          console.error("Не удалось получить привязанный товар МойСклад.", requestError);
+          setError("Не удалось загрузить связанную позицию из МойСклад.");
+        });
+    }
   }
 
   async function openImageLibrary() {
@@ -301,7 +539,44 @@ export default function AdminPanel({
         </button>
       </div>
       {error && <p className="admin-error" role="alert">{error}</p>}
-      <div className="admin-layout">
+      <nav
+        className="admin-tabs"
+        role="tablist"
+        aria-label="Разделы админ-панели"
+      >
+        <button
+          type="button"
+          role="tab"
+          id="admin-catalog-tab"
+          aria-controls="admin-catalog-panel"
+          aria-selected={activeTab === "catalog"}
+          className={activeTab === "catalog" ? "active" : ""}
+          onClick={() => setActiveTab("catalog")}
+        >
+          Каталог
+        </button>
+        <button
+          type="button"
+          role="tab"
+          id="admin-orders-tab"
+          aria-controls="admin-orders-panel"
+          aria-selected={activeTab === "orders"}
+          className={activeTab === "orders" ? "active" : ""}
+          onClick={() => {
+            setActiveTab("orders");
+            if (!ordersLoaded && !ordersLoading) void loadOrders();
+          }}
+        >
+          Заказы
+        </button>
+      </nav>
+      {activeTab === "catalog" ? (
+      <div
+        className="admin-layout"
+        role="tabpanel"
+        id="admin-catalog-panel"
+        aria-labelledby="admin-catalog-tab"
+      >
         <section className="admin-products">
           <button
             className={`admin-product-row${selectedId === "" ? " selected" : ""}`}
@@ -312,9 +587,25 @@ export default function AdminPanel({
           </button>
           {teas.map((tea) => (
             <div
-              className={`admin-product-row${selectedId === String(tea.id) ? " selected" : ""}`}
+              className={`admin-product-row${selectedId === String(tea.id) ? " selected" : ""}${draggedTeaId === tea.id ? " dragging" : ""}`}
               key={tea.id}
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "move";
+              }}
+              onDrop={(event) => dropTea(event, tea.id)}
             >
+              <button
+                type="button"
+                className="admin-drag-handle"
+                aria-label={`Перетащить «${tea.name}» для изменения порядка`}
+                draggable
+                disabled={busy}
+                onDragStart={(event) => startDraggingTea(event, tea.id)}
+                onDragEnd={() => setDraggedTeaId(null)}
+              >
+                ⠿
+              </button>
               <button type="button" onClick={() => selectTea(tea)}>
                 {tea.name}
                 <small>{tea.isActive ? "Опубликован" : "Скрыт"}</small>
@@ -369,6 +660,91 @@ export default function AdminPanel({
             Единица продажи
             <input value={draft.unit} onChange={(event) => setDraft({ ...draft, unit: event.target.value })} required />
           </label>
+          <div className="admin-moysklad-link">
+            <label>
+              Позиция в МойСклад
+              <input
+                value={moyskladSearch}
+                onChange={(event) => {
+                  setMoyskladSearch(event.target.value);
+                  setMoyskladProducts([]);
+                  setMoyskladSearchBusy(event.target.value.trim().length >= 2);
+                  setMoyskladSearchError("");
+                }}
+                placeholder="Название или артикул"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-describedby="moysklad-search-hint"
+                aria-controls="moysklad-product-suggestions"
+                aria-expanded={moyskladProducts.length > 0}
+                autoComplete="off"
+              />
+            </label>
+            <p id="moysklad-search-hint">
+              Начните вводить название или артикул — покажу подходящие товары.
+            </p>
+            {moyskladSearchBusy && <p role="status">Ищем в МойСклад…</p>}
+            {moyskladSearchError && (
+              <p className="admin-error" role="alert">{moyskladSearchError}</p>
+            )}
+            {selectedMoyskladProduct ? (
+              <p>
+                Связано: {selectedMoyskladProduct.name}
+                {selectedMoyskladProduct.code
+                  ? ` · артикул ${selectedMoyskladProduct.code}`
+                  : ""}
+              </p>
+            ) : draft.moyskladAssortmentId ? (
+              <p>Связанный товар ID: {draft.moyskladAssortmentId}</p>
+            ) : (
+              <p>Не выбрано. Без связи с товаром нельзя проверить остаток или оформить заказ.</p>
+            )}
+            {draft.moyskladAssortmentId && (
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => {
+                  setDraft((current) => ({
+                    ...current,
+                    moyskladAssortmentId: null,
+                  }));
+                  setSelectedMoyskladProduct(null);
+                }}
+              >
+                Убрать связь
+              </button>
+            )}
+            {moyskladProducts.length > 0 && (
+              <div
+                className="admin-moysklad-results"
+                id="moysklad-product-suggestions"
+                role="listbox"
+                aria-label="Товары МойСклад"
+              >
+                {moyskladProducts.map((product) => (
+                  <button
+                    type="button"
+                    className="admin-secondary-button"
+                    key={product.id}
+                    role="option"
+                    aria-selected={draft.moyskladAssortmentId === product.id}
+                    onClick={() => selectMoyskladItem(product)}
+                  >
+                    <span>{product.name}</span>
+                    <small>
+                      {product.code ? `Артикул: ${product.code}` : "Без артикула"}
+                    </small>
+                  </button>
+                ))}
+              </div>
+            )}
+            {!moyskladSearchBusy &&
+              moyskladSearch.trim().length >= 2 &&
+              !moyskladSearchError &&
+              moyskladProducts.length === 0 && (
+                <p role="status">Подходящих товаров не найдено.</p>
+              )}
+          </div>
           <label>
             Описание
             <textarea rows={5} value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} required />
@@ -476,11 +852,111 @@ export default function AdminPanel({
               ))}
             </div>
           )}
-          <button className="admin-save-button" type="submit" disabled={busy}>
+          {!draft.moyskladAssortmentId && (
+            <p className="admin-error" role="alert">
+              Чтобы сохранить товар, сначала свяжите его с позицией МойСклад.
+            </p>
+          )}
+          <button
+            className="admin-save-button"
+            type="submit"
+            disabled={busy || !draft.moyskladAssortmentId}
+          >
             {busy ? "Сохранение…" : "Сохранить чай"}
           </button>
         </form>
       </div>
+      ) : (
+        <section
+          className="admin-orders"
+          role="tabpanel"
+          id="admin-orders-panel"
+          aria-labelledby="admin-orders-tab"
+        >
+          <div className="admin-orders-heading">
+            <div>
+              <h2>Заказы</h2>
+              <p>Последние 100 заказов, включая ожидающие синхронизации с МойСклад.</p>
+            </div>
+            <button
+              type="button"
+              className="admin-secondary-button"
+              onClick={() => void loadOrders()}
+              disabled={ordersLoading}
+            >
+              {ordersLoading ? "Загружаем…" : "Обновить"}
+            </button>
+          </div>
+          {ordersError && <p className="admin-error" role="alert">{ordersError}</p>}
+          {ordersLoading && !ordersLoaded ? (
+            <p role="status">Загружаем заказы…</p>
+          ) : orders.length === 0 ? (
+            <p className="admin-orders-empty">Заказов пока нет.</p>
+          ) : (
+            <div className="admin-orders-list">
+              {orders.map((order) => (
+                <article className="admin-order" key={order.id}>
+                  <div className="admin-order-heading">
+                    <div>
+                      <h3>Заказ №{order.id.slice(-8).toUpperCase()}</h3>
+                      <time dateTime={order.createdAt}>
+                        {new Date(order.createdAt).toLocaleString("ru-RU", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </time>
+                    </div>
+                    <span>
+                      {order.moyskladStatus
+                        ? `${isUnsuccessfulMoyskladStatus(order.moyskladStatus, order.moyskladStatusType) ? "Не принят — " : "МойСклад — "}${order.moyskladStatus}`
+                        : order.status === "REJECTED"
+                          ? "Отклонен"
+                          : "Ожидает подтверждения"}
+                    </span>
+                  </div>
+                  <p>
+                    Покупатель: {order.contactName || "Имя не указано"} ·{" "}
+                    <a href={`tel:${order.phoneNumber}`}>{order.phoneNumber}</a>
+                  </p>
+                  <ul>
+                    {order.items.map((item) => (
+                      <li key={item.id}>
+                        <span>
+                          {item.teaName} — {item.quantity} ×{" "}
+                          {item.unitPrice.toLocaleString("ru-RU")} ₽
+                          {item.teaUnit ? ` / ${item.teaUnit}` : ""}
+                        </span>
+                        <span>
+                          {(item.quantity * item.unitPrice).toLocaleString("ru-RU")} ₽
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="admin-order-footer">
+                    <strong>
+                      Итого: {order.total.toLocaleString("ru-RU")} ₽
+                    </strong>
+                    {order.moyskladOrderId ? (
+                      <span>
+                        {order.moyskladStatus
+                          ? `МойСклад: ${order.moyskladStatus}`
+                          : "Записан в МойСклад"}
+                      </span>
+                    ) : (
+                      <span className="admin-order-unsynced">
+                        Не синхронизирован с МойСклад
+                      </span>
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

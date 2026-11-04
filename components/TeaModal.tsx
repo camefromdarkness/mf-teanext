@@ -68,6 +68,14 @@ export default function TeaModal({
   if (!tea) return null;
 
   const images = getTeaImages(tea);
+  const availableStock = tea.availableStock;
+  const hasStockData =
+    typeof availableStock === "number" && Number.isFinite(availableStock);
+  const maximumQuantity = hasStockData
+    ? Math.max(0, Math.floor(availableStock))
+    : 0;
+  const isOutOfStock = hasStockData && maximumQuantity === 0;
+  const quantityLimitReached = !hasStockData || quantity >= maximumQuantity;
   const nextSlide = (direction: number) => {
     onSlideChange((slide + direction + images.length) % images.length);
   };
@@ -163,7 +171,7 @@ export default function TeaModal({
           </svg>
         </button>
         <div
-          className="slider-strip"
+          className={`slider-strip${isOutOfStock ? " out-of-stock" : ""}`}
           onClick={(event) => {
             if (
               images.length < 2 ||
@@ -192,6 +200,9 @@ export default function TeaModal({
             }
           }}
         >
+          {isOutOfStock && (
+            <span className="stock-status-badge">Нет в наличии</span>
+          )}
           <div
             className="slider-track"
             style={{ transform: `translateX(-${slide * 100}%)` }}
@@ -252,10 +263,15 @@ export default function TeaModal({
           {quantity === 0 ? (
             <button
               type="button"
-              className="add-to-cart-btn"
+              className={`add-to-cart-btn${isOutOfStock ? " out-of-stock" : ""}`}
+              disabled={!hasStockData || isOutOfStock}
               onClick={() => onAdd(tea)}
             >
-              Добавить в корзину
+              {isOutOfStock
+                ? "Нет в наличии"
+                : !hasStockData
+                  ? "Остаток не проверен"
+                  : "Добавить в корзину"}
             </button>
           ) : (
             <div className="cart-quantity-control active">
@@ -270,6 +286,7 @@ export default function TeaModal({
               <button
                 type="button"
                 aria-label="Увеличить количество"
+                disabled={quantityLimitReached}
                 onClick={() => onIncrease(tea)}
               >
                 +

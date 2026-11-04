@@ -53,9 +53,6 @@ export default function Header({ cartCount, onOpenCart }: HeaderProps) {
         </svg>
         <span>Кабинет</span>
       </Link>
-      <Link className="account-link admin-link" href="/admin" aria-label="Админ-панель">
-        <span>Админка</span>
-      </Link>
       <section
         className="sale-announcement"
         aria-label="Распродажа 11.11 — Чёрная пятница 11.11"

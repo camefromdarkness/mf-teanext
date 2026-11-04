@@ -42,9 +42,18 @@ export default function TeaCard({
   onDecrease,
   onIncrease,
 }: TeaCardProps) {
+  const availableStock = tea.availableStock;
+  const hasStockData =
+    typeof availableStock === "number" && Number.isFinite(availableStock);
+  const maximumQuantity = hasStockData
+    ? Math.max(0, Math.floor(availableStock))
+    : 0;
+  const isOutOfStock = hasStockData && maximumQuantity === 0;
+  const quantityLimitReached = !hasStockData || quantity >= maximumQuantity;
+
   return (
     <article
-      className="product-card"
+      className={`product-card${isOutOfStock ? " out-of-stock" : ""}`}
       onClick={() => onOpen(tea)}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
@@ -72,6 +81,12 @@ export default function TeaCard({
         {tea.discountPercent > 0 && (
           <span className="discount-badge">−{tea.discountPercent}%</span>
         )}
+        {isOutOfStock && (
+          <span className="stock-status-badge">Нет в наличии</span>
+        )}
+        {!hasStockData && (
+          <span className="stock-status-badge">Остаток не проверен</span>
+        )}
       </div>
       <div className="product-info">
         <h3>{tea.name}</h3>
@@ -96,7 +111,14 @@ export default function TeaCard({
             <button
               type="button"
               className="quick-add-btn"
-              aria-label={`Добавить «${tea.name}» в корзину`}
+              aria-label={
+                quantityLimitReached
+                  ? isOutOfStock
+                    ? `«${tea.name}» нет в наличии`
+                    : `Остаток «${tea.name}» не проверен`
+                  : `Добавить «${tea.name}» в корзину`
+              }
+              disabled={quantityLimitReached}
               onClick={() => onAdd(tea)}
             >
               <svg
@@ -127,6 +149,7 @@ export default function TeaCard({
                 type="button"
                 className="quick-qty-btn quick-qty-plus"
                 aria-label={`Увеличить количество «${tea.name}»`}
+                disabled={quantityLimitReached}
                 onClick={() => onIncrease(tea)}
               >
                 +

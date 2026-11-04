@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { Tea } from "@/data/teas";
+import { getMoyskladAvailableStock } from "@/lib/moysklad";
 
 type TeaRecord = Awaited<ReturnType<typeof findTeas>>[number];
 
@@ -26,6 +27,7 @@ export function toTea(record: TeaRecord): Tea {
 
   return {
     id: record.id,
+    moyskladAssortmentId: record.moyskladAssortmentId,
     type: record.type,
     name: record.name,
     shortDesc: record.shortDesc,
@@ -48,7 +50,18 @@ export function toTea(record: TeaRecord): Tea {
 }
 
 export async function getTeas() {
-  return (await findTeas(false)).map(toTea);
+  const teas = (await findTeas(false)).map(toTea);
+  const assortmentIds = teas.flatMap((tea) =>
+    tea.moyskladAssortmentId ? [tea.moyskladAssortmentId] : [],
+  );
+  const stock = await getMoyskladAvailableStock(assortmentIds);
+
+  return teas.map((tea) => ({
+    ...tea,
+    availableStock: tea.moyskladAssortmentId
+      ? stock.get(tea.moyskladAssortmentId) ?? 0
+      : null,
+  }));
 }
 
 export async function getAllTeas() {

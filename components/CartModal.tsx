@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Tea } from "@/data/teas";
 import type { CartLine } from "@/components/types";
 import { discountedPrice, formatPrice, getTeaImages } from "@/components/TeaCard";
@@ -15,6 +15,11 @@ type CartModalProps = {
   onOpenTea: (tea: Tea) => void;
   onQuantityChange: (id: number, quantity: number) => void;
   onOrderCreated: () => void;
+};
+
+type CheckoutProfile = {
+  name: string | null;
+  phoneNumber: string | null;
 };
 
 function pluralize(count: number) {
@@ -35,10 +40,17 @@ export default function CartModal({
   onOrderCreated,
 }: CartModalProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [profile, setProfile] = useState<CheckoutProfile | null>(null);
+  const [profileStatus, setProfileStatus] = useState<
+    "idle" | "loading" | "ready" | "unauthenticated" | "error"
+  >("idle");
+  const [profileRetry, setProfileRetry] = useState(0);
+  const checkoutKey = useRef<string | null>(null);
   const [checkoutState, setCheckoutState] = useState<{
     message: string;
     href?: string;
     linkLabel?: string;
+    success?: boolean;
   } | null>(null);
   const lines = cart.flatMap((line) => {
     const tea = teas.find((item) => item.id === line.id);
@@ -54,6 +66,67 @@ export default function CartModal({
     0,
   );
   const hasDiscount = lines.some((line) => line.tea.discountPercent > 0);
+  const hasUnavailableQuantity = lines.some(
+    ({ tea, quantity }) =>
+      tea.availableStock === null ||
+      tea.availableStock === undefined ||
+      quantity > Math.max(0, Math.floor(tea.availableStock)),
+  );
+
+  useEffect(() => {
+    if (!open) return;
+
+    const controller = new AbortController();
+    fetch("/api/account/profile", {
+      signal: controller.signal,
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        if (response.status === 401) {
+          setProfile(null);
+          setProfileStatus("unauthenticated");
+          return;
+        }
+        if (!response.ok) {
+          throw new Error("Не удалось загрузить контактные данные.");
+        }
+        const result: unknown = await response.json();
+        if (
+          typeof result !== "object" ||
+          result === null ||
+          !("name" in result) ||
+          !(typeof result.name === "string" || result.name === null) ||
+          !("phoneNumber" in result) ||
+          !(typeof result.phoneNumber === "string" || result.phoneNumber === null)
+        ) {
+          throw new Error("Сервер вернул некорректные данные профиля.");
+        }
+        setProfile({ name: result.name, phoneNumber: result.phoneNumber });
+        setProfileStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        console.error("Не удалось загрузить телефон для оформления заказа.", error);
+        setProfileStatus("error");
+      });
+
+    return () => controller.abort();
+  }, [open, profileRetry]);
+
+  useEffect(() => {
+    checkoutKey.current = null;
+  }, [cart]);
+
+  useEffect(() => {
+    const telegramUrl = checkoutState?.success ? checkoutState.href : undefined;
+    if (!telegramUrl) return;
+
+    const redirectTimer = window.setTimeout(() => {
+      window.location.assign(telegramUrl);
+    }, 1800);
+
+    return () => window.clearTimeout(redirectTimer);
+  }, [checkoutState]);
 
   function close() {
     setCheckoutState(null);
@@ -61,14 +134,16 @@ export default function CartModal({
   }
 
   async function checkout() {
-    if (!lines.length) return;
+    if (!lines.length || profileStatus !== "ready" || !profile?.phoneNumber) return;
     setSubmitting(true);
     setCheckoutState(null);
     try {
+      checkoutKey.current ??= crypto.randomUUID();
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          checkoutKey: checkoutKey.current,
           items: lines.map(({ tea, quantity }) => ({
             id: tea.id,
             quantity,
@@ -95,7 +170,7 @@ export default function CartModal({
           message: errorMessage,
           ...(code === "AUTH_REQUIRED"
             ? {
-                href: "/auth/signin?callbackUrl=%2Faccount",
+                href: "/auth/signin?callbackUrl=%2F",
                 linkLabel: "Войти в аккаунт",
               }
             : code === "PROFILE_REQUIRED"
@@ -149,10 +224,12 @@ export default function CartModal({
         `Итого: ${formatPrice(result.total)} ₽`,
       ].join("\n");
       const telegramUrl = `https://t.me/mf_administration?text=${encodeURIComponent(message)}`;
+      checkoutKey.current = null;
       setCheckoutState({
-        message: "Заказ сохранён в истории. Чтобы магазин получил заявку, отправьте сообщение в Telegram.",
+        message: `Заказ WEB-${result.orderId.slice(-8).toUpperCase()} на ${formatPrice(result.total)} ₽ создан в МойСклад. Через пару секунд откроется Telegram для подтверждения заказа.`,
         href: telegramUrl,
         linkLabel: "Перейти в Telegram и отправить заказ",
+        success: true,
       });
       onOrderCreated();
     } catch (error) {
@@ -263,6 +340,11 @@ export default function CartModal({
                     type="button"
                     className="cart-qty-btn"
                     aria-label={`Увеличить количество «${tea.name}»`}
+                    disabled={
+                      tea.availableStock === null ||
+                      tea.availableStock === undefined ||
+                      quantity >= Math.max(0, Math.floor(tea.availableStock))
+                    }
                     onClick={() => onQuantityChange(tea.id, quantity + 1)}
                   >
                     +
@@ -281,27 +363,92 @@ export default function CartModal({
           )}
         </div>
         <div className="cart-footer">
-          <div className="cart-total">
-            <span>Количество товаров</span>
-            <span>{itemCount}</span>
-          </div>
-          <div className="cart-total-amount">
-            <span className="label">Итого</span>
-            {itemCount > 0 && hasDiscount && (
-              <span className="old-value sale-original-price">
-                {formatPrice(originalTotal)} ₽
-              </span>
-            )}
-            <span className="value sale-value">{formatPrice(total)} ₽</span>
-          </div>
-          <button
-            type="button"
-            className="cart-checkout-btn"
-            disabled={lines.length === 0 || submitting}
-            onClick={checkout}
-          >
-            {submitting ? "Оформляем…" : "Оформить заказ"}
-          </button>
+          {(profileStatus === "idle" || profileStatus === "loading") && (
+            <p className="cart-profile-message" role="status">
+              Загружаем контактные данные…
+            </p>
+          )}
+          {profileStatus === "unauthenticated" && (
+            <div className="cart-profile-message">
+              <p>Чтобы оформить заказ, войдите через соцсеть.</p>
+              <Link href="/auth/signin?callbackUrl=%2F">Войти в аккаунт</Link>
+            </div>
+          )}
+          {profileStatus === "error" && (
+            <div className="cart-profile-message" role="alert">
+              <p>Не удалось загрузить данные профиля.</p>
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => {
+                  setProfileStatus("loading");
+                  setProfileRetry((attempt) => attempt + 1);
+                }}
+              >
+                Повторить
+              </button>
+            </div>
+          )}
+          {profileStatus === "ready" && profile && (
+            <div className="cart-profile-fields">
+              {profile.phoneNumber ? (
+                <label>
+                  Телефон для заказа
+                  <input
+                    type="tel"
+                    autoComplete="tel"
+                    value={profile.phoneNumber}
+                    readOnly
+                  />
+                </label>
+              ) : (
+                <p>
+                  Добавьте номер телефона в личном кабинете для оформления
+                  заказа.{" "}
+                  <Link href="/account">Перейти в личный кабинет</Link>
+                </p>
+              )}
+            </div>
+          )}
+          {!checkoutState?.success && (
+            <>
+              <div className="cart-total">
+                <span>Количество товаров</span>
+                <span>{itemCount}</span>
+              </div>
+              <div className="cart-total-amount">
+                <span className="label">Итого</span>
+                {itemCount > 0 && hasDiscount && (
+                  <span className="old-value sale-original-price">
+                    {formatPrice(originalTotal)} ₽
+                  </span>
+                )}
+                <span className="value sale-value">{formatPrice(total)} ₽</span>
+              </div>
+            </>
+          )}
+          {hasUnavailableQuantity && (
+            <p className="cart-stock-warning" role="alert">
+              Не удалось подтвердить количество одного или нескольких товаров.
+              Уменьшите их количество или повторите попытку позже.
+            </p>
+          )}
+          {!checkoutState?.success && (
+            <button
+              type="button"
+              className="cart-checkout-btn"
+              disabled={
+                lines.length === 0 ||
+                submitting ||
+                hasUnavailableQuantity ||
+                profileStatus !== "ready" ||
+                !profile?.phoneNumber
+              }
+              onClick={checkout}
+            >
+              {submitting ? "Оформляем…" : "Оформить заказ"}
+            </button>
+          )}
           {checkoutState && (
             <div className="cart-checkout-result" role="status">
               <p>{checkoutState.message}</p>

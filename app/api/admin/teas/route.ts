@@ -6,6 +6,7 @@ import { toTea } from "@/lib/teas";
 
 type TeaInput = {
   id?: number;
+  moyskladAssortmentId: string | null;
   type: string;
   name: string;
   shortDesc: string;
@@ -37,6 +38,8 @@ function parseTeaInput(value: unknown): TeaInput | null {
     (input.shortDesc as string).length > 300 ||
     (input.unit as string).length > 60 ||
     (input.description as string).length > 10_000 ||
+    typeof input.moyskladAssortmentId !== "string" ||
+    !/^[0-9a-f-]{36}$/i.test(input.moyskladAssortmentId) ||
     !Number.isSafeInteger(input.price) ||
     (input.price as number) < 1 ||
     (input.price as number) > 10_000_000 ||
@@ -84,6 +87,7 @@ function parseTeaInput(value: unknown): TeaInput | null {
 
   return {
     ...(input.id === undefined ? {} : { id: input.id as number }),
+    moyskladAssortmentId: input.moyskladAssortmentId as string,
     type: (input.type as string).trim(),
     name: (input.name as string).trim(),
     shortDesc: (input.shortDesc as string).trim(),
@@ -110,6 +114,18 @@ export async function POST(request: Request) {
 
   const input = parseTeaInput(body);
   if (!input) {
+    if (
+      typeof body === "object" &&
+      body !== null &&
+      (!("moyskladAssortmentId" in body) ||
+        typeof body.moyskladAssortmentId !== "string" ||
+        !/^[0-9a-f-]{36}$/i.test(body.moyskladAssortmentId))
+    ) {
+      return NextResponse.json(
+        { error: "Выберите позицию МойСклад для этого товара." },
+        { status: 400 },
+      );
+    }
     return NextResponse.json(
       { error: "Проверьте поля и фотографии товара." },
       { status: 400 },
@@ -117,6 +133,7 @@ export async function POST(request: Request) {
   }
 
   const teaData = {
+    moyskladAssortmentId: input.moyskladAssortmentId,
     type: input.type,
     name: input.name,
     shortDesc: input.shortDesc,
@@ -165,6 +182,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json(toTea(tea));
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      return NextResponse.json(
+        { error: "Этот товар МойСклад уже привязан к другой позиции сайта." },
+        { status: 409 },
+      );
+    }
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2025"

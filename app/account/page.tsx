@@ -94,6 +94,11 @@ async function AccountContent() {
           ) : (
             <div className="account-orders">
               {profile.orders.map((order) => {
+                const isMoyskladUnsuccessful =
+                  order.moyskladStatusType === "Unsuccessful" ||
+                  ["Отменен", "Отклонен", "Удален", "Возврат"].includes(
+                    order.moyskladStatus ?? "",
+                  );
                 const telegramMessage = [
                   `Здравствуйте! Хочу подтвердить заказ №${order.id.slice(-8).toUpperCase()}.`,
                   `Имя: ${order.contactName ?? "не указано"}`,
@@ -124,7 +129,11 @@ async function AccountContent() {
                         </time>
                       </div>
                       <span className="account-order-status">
-                        Ожидает подтверждения
+                        {order.moyskladStatus
+                          ? `МойСклад: ${order.moyskladStatus}`
+                          : order.status === "REJECTED"
+                            ? "Отклонен магазином"
+                            : "Ожидает подтверждения"}
                       </span>
                     </div>
                     <ul>
@@ -144,18 +153,31 @@ async function AccountContent() {
                     <p className="account-order-total">
                       Итого: {order.total.toLocaleString("ru-RU")} ₽
                     </p>
-                    <p className="account-order-note">
-                      Заказ будет принят после отправки сообщения и подтверждения
-                      магазином.
-                    </p>
-                    <a
-                      className="account-order-send"
-                      href={telegramUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Отправить заказ в Telegram
-                    </a>
+                    {isMoyskladUnsuccessful || order.status === "REJECTED" ? (
+                      <p className="account-order-note">
+                        Этот заказ отменён или удалён в МойСклад.
+                      </p>
+                    ) : order.moyskladSyncRequired && !order.moyskladOrderId ? (
+                      <p className="account-order-note">
+                        Заказ пока не зарегистрирован в МойСклад. Вернитесь в
+                        каталог и повторите оформление.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="account-order-note">
+                          Заказ будет принят после отправки сообщения и
+                          подтверждения магазином.
+                        </p>
+                        <a
+                          className="account-order-send"
+                          href={telegramUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Отправить заказ в Telegram
+                        </a>
+                      </>
+                    )}
                   </article>
                 );
               })}

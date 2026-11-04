@@ -134,13 +134,17 @@ export default function TeaStore({ teas }: { teas: Tea[] }) {
     updateCart(teas, (current) => {
       const existing = current.find((item) => item.id === tea.id);
       if (!existing && difference < 1) return current;
-      if (!existing) return [...current, { id: tea.id, quantity: difference }];
-
-      const quantity = existing.quantity + difference;
+      const maximumQuantity =
+        tea.availableStock === null || tea.availableStock === undefined
+          ? 0
+          : Math.max(0, Math.floor(tea.availableStock));
+      const quantity = (existing?.quantity ?? 0) + difference;
+      if (quantity > maximumQuantity) return current;
       if (quantity <= 0) {
         return current.filter((item) => item.id !== tea.id);
       }
 
+      if (!existing) return [...current, { id: tea.id, quantity }];
       return current.map((item) =>
         item.id === tea.id ? { ...item, quantity } : item,
       );
@@ -223,12 +227,25 @@ export default function TeaStore({ teas }: { teas: Tea[] }) {
         onClose={() => setCartOpen(false)}
         onOpenTea={openTea}
         onQuantityChange={(id, quantity) => {
+            const tea = teas.find((item) => item.id === id);
+            if (!tea) return;
+            const maximumQuantity =
+              tea.availableStock === null || tea.availableStock === undefined
+                ? 0
+                : Math.max(0, Math.floor(tea.availableStock));
             updateCart(teas, (current) => {
+              const existing = current.find((item) => item.id === id);
               if (quantity <= 0) {
                 return current.filter((item) => item.id !== id);
               }
-              const existing = current.some((item) => item.id === id);
-              return existing
+              if (
+                quantity > maximumQuantity &&
+                quantity >= (existing?.quantity ?? 0)
+              ) {
+                return current;
+              }
+              const alreadyExists = current.some((item) => item.id === id);
+              return alreadyExists
                 ? current.map((item) =>
                     item.id === id ? { ...item, quantity } : item,
                   )
