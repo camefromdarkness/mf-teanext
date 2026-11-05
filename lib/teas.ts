@@ -54,7 +54,7 @@ export async function getTeas() {
   const assortmentIds = teas.flatMap((tea) =>
     tea.moyskladAssortmentId ? [tea.moyskladAssortmentId] : [],
   );
-  let stock: Map<string, number>;
+  let stock: Map<string, number> | null;
   try {
     stock = await getMoyskladAvailableStock(assortmentIds);
   } catch (error) {
@@ -62,14 +62,15 @@ export async function getTeas() {
       "Не удалось проверить остатки в МойСклад. Каталог будет показан без данных об остатках.",
       error,
     );
-    stock = new Map();
+    stock = null;
   }
 
   return teas.map((tea) => ({
     ...tea,
-    availableStock: tea.moyskladAssortmentId
-      ? stock.get(tea.moyskladAssortmentId) ?? null
-      : null,
+    availableStock:
+      tea.moyskladAssortmentId && stock !== null
+        ? stock.get(tea.moyskladAssortmentId) ?? 0
+        : null,
   }));
 }
 
