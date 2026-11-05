@@ -54,12 +54,21 @@ export async function getTeas() {
   const assortmentIds = teas.flatMap((tea) =>
     tea.moyskladAssortmentId ? [tea.moyskladAssortmentId] : [],
   );
-  const stock = await getMoyskladAvailableStock(assortmentIds);
+  let stock: Map<string, number>;
+  try {
+    stock = await getMoyskladAvailableStock(assortmentIds);
+  } catch (error) {
+    console.error(
+      "Не удалось проверить остатки в МойСклад. Каталог будет показан без данных об остатках.",
+      error,
+    );
+    stock = new Map();
+  }
 
   return teas.map((tea) => ({
     ...tea,
     availableStock: tea.moyskladAssortmentId
-      ? stock.get(tea.moyskladAssortmentId) ?? 0
+      ? stock.get(tea.moyskladAssortmentId) ?? null
       : null,
   }));
 }

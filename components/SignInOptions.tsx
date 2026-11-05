@@ -4,11 +4,13 @@ import { useState } from "react";
 import { signIn } from "next-auth/react";
 
 type SignInOptionsProps = {
+  redirectTo: string;
   vkReady: boolean;
   telegramReady: boolean;
 };
 
 export default function SignInOptions({
+  redirectTo,
   vkReady,
   telegramReady,
 }: SignInOptionsProps) {
@@ -17,7 +19,7 @@ export default function SignInOptions({
   async function handleSignIn(provider: "vkid" | "telegram") {
     setError("");
     try {
-      await signIn(provider, { redirectTo: "/account" });
+      await signIn(provider, { redirectTo });
     } catch (signInError) {
       console.error("Не удалось начать вход.", signInError);
       setError("Не удалось начать вход. Попробуйте ещё раз.");

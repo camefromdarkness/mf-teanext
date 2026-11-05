@@ -8,10 +8,14 @@ export const metadata = {
   robots: { index: false, follow: false },
 };
 
-export default function SignInPage() {
+type SignInPageProps = {
+  searchParams: Promise<{ callbackUrl?: string | string[] }>;
+};
+
+export default function SignInPage({ searchParams }: SignInPageProps) {
   return (
     <Suspense fallback={<SignInLoading />}>
-      <SignInContent />
+      <SignInContent searchParams={searchParams} />
     </Suspense>
   );
 }
@@ -27,8 +31,25 @@ function SignInLoading() {
   );
 }
 
-async function SignInContent() {
+async function SignInContent({ searchParams }: SignInPageProps) {
   await connection();
+  const params = await searchParams;
+  const callbackUrl = Array.isArray(params.callbackUrl)
+    ? params.callbackUrl[0]
+    : params.callbackUrl;
+  let redirectTo = "/account";
+
+  if (callbackUrl) {
+    try {
+      const baseUrl = new URL(process.env.AUTH_URL ?? "http://localhost:3000");
+      const targetUrl = new URL(callbackUrl, baseUrl);
+      if (targetUrl.origin === baseUrl.origin) {
+        redirectTo = `${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+      }
+    } catch (error) {
+      console.error("Некорректный адрес возврата после входа.", error);
+    }
+  }
 
   return (
     <main className="account-page">
@@ -42,6 +63,7 @@ async function SignInContent() {
           Войдите через удобный сервис — пароль для сайта не нужен.
         </p>
         <SignInOptions
+          redirectTo={redirectTo}
           vkReady={Boolean(
             process.env.AUTH_VKID_ID && process.env.AUTH_VKID_SECRET,
           )}

@@ -269,9 +269,7 @@ export default function TeaModal({
             >
               {isOutOfStock
                 ? "Нет в наличии"
-                : !hasStockData
-                  ? "Остаток не проверен"
-                  : "Добавить в корзину"}
+                : "Добавить в корзину"}
             </button>
           ) : (
             <div className="cart-quantity-control active">

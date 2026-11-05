@@ -84,9 +84,6 @@ export default function TeaCard({
         {isOutOfStock && (
           <span className="stock-status-badge">Нет в наличии</span>
         )}
-        {!hasStockData && (
-          <span className="stock-status-badge">Остаток не проверен</span>
-        )}
       </div>
       <div className="product-info">
         <h3>{tea.name}</h3>
@@ -112,10 +109,8 @@ export default function TeaCard({
               type="button"
               className="quick-add-btn"
               aria-label={
-                quantityLimitReached
-                  ? isOutOfStock
-                    ? `«${tea.name}» нет в наличии`
-                    : `Остаток «${tea.name}» не проверен`
+                isOutOfStock
+                  ? `«${tea.name}» нет в наличии`
                   : `Добавить «${tea.name}» в корзину`
               }
               disabled={quantityLimitReached}

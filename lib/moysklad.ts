@@ -131,8 +131,6 @@ export async function getMoyskladProduct(id: string) {
   };
 }
 
-let missingStockConfigurationReported = false;
-
 export async function getMoyskladAvailableStock(assortmentIds: string[]) {
   const stock = new Map<string, number>();
   if (assortmentIds.length === 0) return stock;
@@ -141,13 +139,9 @@ export async function getMoyskladAvailableStock(assortmentIds: string[]) {
     !process.env.MOYSKLAD_TOKEN?.trim() ||
     !process.env.MOYSKLAD_STORE_ID?.trim()
   ) {
-    if (!missingStockConfigurationReported) {
-      console.error(
-        "Остатки МойСклад недоступны: задайте MOYSKLAD_TOKEN и MOYSKLAD_STORE_ID.",
-      );
-      missingStockConfigurationReported = true;
-    }
-    return stock;
+    throw new MoyskladError(
+      "Для проверки остатков не заданы MOYSKLAD_TOKEN и MOYSKLAD_STORE_ID.",
+    );
   }
 
   const assortmentSet = new Set(assortmentIds);
