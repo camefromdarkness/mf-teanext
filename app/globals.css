@@ -2322,6 +2322,42 @@
         width: min(100%, 760px);
     }
 
+    .account-tabs {
+        margin-top: 28px;
+    }
+
+    .account-tab-list {
+        display: flex;
+        gap: 24px;
+        border-bottom: 1px solid #292929;
+    }
+
+    .account-tab {
+        padding: 0 0 12px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        background: transparent;
+        color: #999;
+        font: inherit;
+        font-size: 0.88rem;
+        cursor: pointer;
+    }
+
+    .account-tab[aria-selected="true"] {
+        border-bottom-color: #d6bd7f;
+        color: #f0dfb0;
+    }
+
+    .account-tab:focus-visible {
+        outline: 2px solid #d6bd7f;
+        outline-offset: 4px;
+    }
+
+    .account-tabs [role="tabpanel"] {
+        padding-top: 4px;
+    }
+
     .account-back-link {
         color: #a0a0a0;
         font-size: 0.82rem;
@@ -2557,9 +2593,7 @@
     }
 
     .account-orders-section {
-        margin-top: 34px;
-        padding-top: 25px;
-        border-top: 1px solid #242424;
+        margin-top: 24px;
     }
 
     .account-orders-section h2 {

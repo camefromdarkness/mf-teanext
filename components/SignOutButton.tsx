@@ -7,7 +7,7 @@ export default function SignOutButton() {
     <button
       type="button"
       className="account-signout"
-      onClick={() => signOut({ redirectTo: "/" })}
+      onClick={() => signOut({ redirectTo: "/auth/signin" })}
     >
       Выйти
     </button>
