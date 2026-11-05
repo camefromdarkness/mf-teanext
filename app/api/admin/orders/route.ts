@@ -40,6 +40,7 @@ export async function GET() {
       },
     });
 
+    let statusSyncFailed = false;
     const synchronizedOrders = [];
     for (let index = 0; index < orders.length; index += 5) {
       const batch = orders.slice(index, index + 5);
@@ -47,25 +48,33 @@ export async function GET() {
         ...(await Promise.all(
           batch.map(async (order) => {
             if (!order.moyskladOrderId) return order;
-            const externalStatus = await getMoyskladCustomerOrderStatus(
-              order.moyskladOrderId,
-            );
-            if (
-              order.moyskladStatus !== externalStatus.name ||
-              order.moyskladStatusType !== externalStatus.type
-            ) {
-              await prisma.order.update({
-                where: { id: order.id },
-                data: {
+            try {
+              const externalStatus = await getMoyskladCustomerOrderStatus(
+                order.moyskladOrderId,
+              );
+              if (
+                order.moyskladStatus !== externalStatus.name ||
+                order.moyskladStatusType !== externalStatus.type
+              ) {
+                await prisma.order.update({
+                  where: { id: order.id },
+                  data: {
+                    moyskladStatus: externalStatus.name,
+                    moyskladStatusType: externalStatus.type,
+                  },
+                });
+                return {
+                  ...order,
                   moyskladStatus: externalStatus.name,
                   moyskladStatusType: externalStatus.type,
-                },
-              });
-              return {
-                ...order,
-                moyskladStatus: externalStatus.name,
-                moyskladStatusType: externalStatus.type,
-              };
+                };
+              }
+            } catch (error) {
+              statusSyncFailed = true;
+              console.error(
+                `Не удалось обновить статус заказа ${order.id} из МойСклад.`,
+                error,
+              );
             }
             return order;
           }),
@@ -74,7 +83,10 @@ export async function GET() {
     }
 
     return NextResponse.json(synchronizedOrders, {
-      headers: { "Cache-Control": "no-store" },
+      headers: {
+        "Cache-Control": "no-store",
+        "X-Moysklad-Status-Sync": statusSyncFailed ? "failed" : "ok",
+      },
     });
   } catch (error) {
     console.error("Не удалось загрузить заказы для админ-панели.", error);

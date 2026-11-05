@@ -166,6 +166,7 @@ export default function AdminPanel({
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
+  const [ordersNotice, setOrdersNotice] = useState("");
   const editing = selectedId !== "";
   const categories = useMemo(
     () => [...new Set(teas.map((tea) => tea.type.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru")),
@@ -229,6 +230,7 @@ export default function AdminPanel({
   async function loadOrders() {
     setOrdersLoading(true);
     setOrdersError("");
+    setOrdersNotice("");
     try {
       const response = await fetch("/api/admin/orders", { cache: "no-store" });
       if (!response.ok) {
@@ -240,6 +242,11 @@ export default function AdminPanel({
         throw new Error("Сервер вернул некорректный список заказов.");
       }
       setOrders(result);
+      if (response.headers.get("X-Moysklad-Status-Sync") === "failed") {
+        setOrdersNotice(
+          "Не удалось обновить статусы из МойСклад. Показаны последние сохранённые данные.",
+        );
+      }
       setOrdersLoaded(true);
     } catch (requestError) {
       console.error("Не удалось загрузить заказы.", requestError);
@@ -1069,6 +1076,7 @@ export default function AdminPanel({
             </button>
           </div>
           {ordersError && <p className="admin-error" role="alert">{ordersError}</p>}
+          {ordersNotice && <p role="status">{ordersNotice}</p>}
           {ordersLoading && !ordersLoaded ? (
             <p role="status">Загружаем заказы…</p>
           ) : orders.length === 0 ? (
