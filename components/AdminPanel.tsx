@@ -11,10 +11,12 @@ import {
   useState,
   type FormEvent,
 } from "react";
-import { useRouter } from "next/navigation";
+import { signOut } from "next-auth/react";
 import type { Tea, TeaImage } from "@/data/teas";
+import AdminUsersPanel from "@/components/AdminUsersPanel";
 
 type AdminTea = Tea & { isActive: boolean };
+type StaffRole = "MANAGER" | "ADMIN" | "SUPER_ADMIN";
 type Draft = Omit<
   Tea,
   "id" | "images" | "isActive" | "sortOrder" | "discountPercent" | "availableStock"
@@ -24,6 +26,7 @@ type Draft = Omit<
 };
 
 type MoyskladProduct = { id: string; name: string; code: string };
+type MoyskladOrderState = { id: string; name: string; stateType: string | null };
 
 type AdminOrder = {
   id: string;
@@ -128,19 +131,22 @@ function draftFromTea(tea: AdminTea): Draft {
 }
 
 export default function AdminPanel({
-  authenticated,
+  role,
+  currentUserId,
   initialTeas,
 }: {
-  authenticated: boolean;
+  role: StaffRole;
+  currentUserId: string;
   initialTeas: AdminTea[];
 }) {
-  const router = useRouter();
+  const canEditExistingTeas = role !== "MANAGER";
+  const canManageUsers = role !== "MANAGER";
+  const canDeleteOrders = role !== "MANAGER";
   const [teas, setTeas] = useState(initialTeas);
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [creatingCategory, setCreatingCategory] = useState(false);
   const [detailsText, setDetailsText] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [mediaImages, setMediaImages] = useState<{ url: string; alt: string }[]>([]);
@@ -161,12 +167,18 @@ export default function AdminPanel({
     clientY: number;
   } | null>(null);
   const [teaPendingDeletion, setTeaPendingDeletion] = useState<AdminTea | null>(null);
-  const [activeTab, setActiveTab] = useState<"catalog" | "orders">("catalog");
+  const [activeTab, setActiveTab] = useState<"catalog" | "orders" | "users">("catalog");
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState("");
   const [ordersNotice, setOrdersNotice] = useState("");
+  const [orderStates, setOrderStates] = useState<MoyskladOrderState[]>([]);
+  const [orderStatesLoaded, setOrderStatesLoaded] = useState(false);
+  const [orderActionBusyId, setOrderActionBusyId] = useState("");
+  const [orderStateById, setOrderStateById] = useState<
+    Record<string, { paid?: string; rejected?: string }>
+  >({});
   const editing = selectedId !== "";
   const categories = useMemo(
     () => [...new Set(teas.map((tea) => tea.type.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru")),
@@ -187,44 +199,6 @@ export default function AdminPanel({
       | { error?: string }
       | null;
     return body?.error ?? "Не удалось выполнить запрос.";
-  }
-
-  async function login(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const response = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      if (!response.ok) {
-        setError(await readError(response));
-        return;
-      }
-      setPassword("");
-      router.refresh();
-    } catch (requestError) {
-      console.error("Не удалось выполнить вход в админ-панель.", requestError);
-      setError("Не удалось подключиться к серверу.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function logout() {
-    setBusy(true);
-    try {
-      const response = await fetch("/api/admin/logout", { method: "POST" });
-      if (!response.ok) throw new Error(await readError(response));
-      router.refresh();
-    } catch (requestError) {
-      console.error("Не удалось завершить сеанс администратора.", requestError);
-      setError("Не удалось выйти. Попробуйте ещё раз.");
-    } finally {
-      setBusy(false);
-    }
   }
 
   async function loadOrders() {
@@ -253,6 +227,128 @@ export default function AdminPanel({
       setOrdersError("Не удалось загрузить заказы.");
     } finally {
       setOrdersLoading(false);
+    }
+  }
+
+  async function loadOrderStates() {
+    try {
+      const response = await fetch("/api/admin/orders/states", {
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const result: unknown = await response.json();
+      if (
+        !Array.isArray(result) ||
+        !result.every(
+          (item) =>
+            typeof item === "object" &&
+            item !== null &&
+            "id" in item &&
+            typeof item.id === "string" &&
+            "name" in item &&
+            typeof item.name === "string",
+        )
+      ) {
+        throw new Error("Сервер вернул некорректный список статусов МойСклад.");
+      }
+      setOrderStates(result as MoyskladOrderState[]);
+      setOrderStatesLoaded(true);
+    } catch (requestError) {
+      console.error("Не удалось загрузить статусы МойСклад.", requestError);
+      setOrdersError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Не удалось загрузить статусы из МойСклад.",
+      );
+    }
+  }
+
+  async function updateOrderStatus(
+    order: AdminOrder,
+    decision: "paid" | "rejected",
+  ) {
+    const stateId = orderStateById[order.id]?.[decision];
+    if (!stateId) {
+      setOrdersError("Сначала выберите статус МойСклад для этого действия.");
+      return;
+    }
+    const selectedState = orderStates.find((state) => state.id === stateId);
+    if (!selectedState) {
+      setOrdersError("Выбранный статус не найден. Обновите список статусов.");
+      return;
+    }
+    const actionText =
+      decision === "paid" ? "подтвердить оплату" : "отклонить заказ";
+    if (
+      !window.confirm(
+        `Вы уверены, что хотите ${actionText} и установить в МойСклад статус «${selectedState.name}»?`,
+      )
+    ) {
+      return;
+    }
+
+    setOrderActionBusyId(order.id);
+    setOrdersError("");
+    try {
+      const response = await fetch(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision, stateId }),
+      });
+      if (!response.ok) {
+        setOrdersError(await readError(response));
+        return;
+      }
+      const updated = (await response.json()) as {
+        id: string;
+        status: string;
+        moyskladStatus: string | null;
+      };
+      setOrders((current) =>
+        current.map((item) =>
+          item.id === updated.id
+            ? {
+                ...item,
+                status: updated.status,
+                moyskladStatus: updated.moyskladStatus,
+              }
+            : item,
+        ),
+      );
+    } catch (requestError) {
+      console.error("Не удалось изменить статус заказа.", requestError);
+      setOrdersError("Не удалось изменить статус заказа.");
+    } finally {
+      setOrderActionBusyId("");
+    }
+  }
+
+  async function deleteOrder(order: AdminOrder) {
+    if (
+      !window.confirm(
+        "Удалить запись заказа из локальной базы? Документ МойСклад и данные склада останутся без изменений.",
+      )
+    ) {
+      return;
+    }
+    setOrderActionBusyId(order.id);
+    setOrdersError("");
+    try {
+      const response = await fetch("/api/admin/orders", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: order.id }),
+      });
+      if (!response.ok) {
+        setOrdersError(await readError(response));
+        return;
+      }
+      setOrders((current) => current.filter((item) => item.id !== order.id));
+    } catch (requestError) {
+      console.error("Не удалось удалить локальную запись заказа.", requestError);
+      setOrdersError("Не удалось удалить запись заказа.");
+    } finally {
+      setOrderActionBusyId("");
     }
   }
 
@@ -630,41 +726,26 @@ export default function AdminPanel({
     setMediaOpen(false);
   }
 
-  if (!authenticated) {
-    return (
-      <main className="admin-page">
-        <form className="admin-login" onSubmit={login}>
-          <Link className="admin-back-link" href="/">← В магазин</Link>
-          <p className="tea-category-label">MOON FLOWER</p>
-          <h1>Вход в админ-панель</h1>
-          <label>
-            Пароль администратора
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-          </label>
-          {error && <p className="admin-error" role="alert">{error}</p>}
-          <button type="submit" disabled={busy}>
-            {busy ? "Проверка…" : "Войти"}
-          </button>
-        </form>
-      </main>
-    );
-  }
-
   return (
     <main className="admin-page">
       <div className="admin-heading">
         <div>
           <Link className="admin-back-link" href="/">← В магазин</Link>
-          <p className="tea-category-label">УПРАВЛЕНИЕ КАТАЛОГОМ</p>
+          <p className="tea-category-label">
+            {role === "SUPER_ADMIN"
+              ? "СУПЕР-АДМИНИСТРАТОР"
+              : role === "ADMIN"
+                ? "АДМИНИСТРАТОР"
+                : "МЕНЕДЖЕР"}
+          </p>
           <h1>Админ-панель</h1>
         </div>
-        <button type="button" className="admin-secondary-button" onClick={logout} disabled={busy}>
+        <button
+          type="button"
+          className="admin-secondary-button"
+          onClick={() => signOut({ redirectTo: "/auth/signin" })}
+          disabled={busy}
+        >
           Выйти
         </button>
       </div>
@@ -695,10 +776,24 @@ export default function AdminPanel({
           onClick={() => {
             setActiveTab("orders");
             if (!ordersLoaded && !ordersLoading) void loadOrders();
+            if (!orderStatesLoaded) void loadOrderStates();
           }}
         >
           Заказы
         </button>
+        {canManageUsers && (
+          <button
+            type="button"
+            role="tab"
+            id="admin-users-tab"
+            aria-controls="admin-users-panel"
+            aria-selected={activeTab === "users"}
+            className={activeTab === "users" ? "active" : ""}
+            onClick={() => setActiveTab("users")}
+          >
+            Пользователи
+          </button>
+        )}
       </nav>
       {activeTab === "catalog" ? (
       <div
@@ -737,19 +832,25 @@ export default function AdminPanel({
                 >
                   ⠿
                 </button>
-                <button type="button" onClick={() => selectTea(tea)}>
+                <button
+                  type="button"
+                  disabled={!canEditExistingTeas}
+                  onClick={() => selectTea(tea)}
+                >
                   {tea.name}
                   <small>{tea.isActive ? "Опубликован" : "Скрыт"}</small>
                 </button>
-                <button
-                  type="button"
-                  className="admin-visibility-button"
-                  aria-label={tea.isActive ? "Скрыть чай" : "Опубликовать чай"}
-                  disabled={busy}
-                  onClick={() => toggleTea(tea)}
-                >
-                  {tea.isActive ? "Скрыть" : "Показать"}
-                </button>
+                {canEditExistingTeas && (
+                  <button
+                    type="button"
+                    className="admin-visibility-button"
+                    aria-label={tea.isActive ? "Скрыть чай" : "Опубликовать чай"}
+                    disabled={busy}
+                    onClick={() => toggleTea(tea)}
+                  >
+                    {tea.isActive ? "Скрыть" : "Показать"}
+                  </button>
+                )}
               </div>
             </Fragment>
           ))}
@@ -847,7 +948,7 @@ export default function AdminPanel({
                   setMoyskladSearchBusy(event.target.value.trim().length >= 2);
                   setMoyskladSearchError("");
                 }}
-                placeholder="Название или артикул"
+                placeholder="Название или код"
                 role="combobox"
                 aria-autocomplete="list"
                 aria-describedby="moysklad-search-hint"
@@ -857,7 +958,7 @@ export default function AdminPanel({
               />
             </label>
             <p id="moysklad-search-hint">
-              Начните вводить название или артикул — покажу подходящие товары.
+              Начните вводить название или код — покажу подходящие товары.
             </p>
             {moyskladSearchBusy && <p role="status">Ищем в МойСклад…</p>}
             {moyskladSearchError && (
@@ -1054,7 +1155,7 @@ export default function AdminPanel({
           )}
         </form>
       </div>
-      ) : (
+      ) : activeTab === "orders" ? (
         <section
           className="admin-orders"
           role="tabpanel"
@@ -1064,13 +1165,19 @@ export default function AdminPanel({
           <div className="admin-orders-heading">
             <div>
               <h2>Заказы</h2>
-              <p>Последние 100 заказов, включая ожидающие синхронизации с МойСклад.</p>
+              <p>
+                Заказ резервирует остатки в МойСклад при создании. Выберите
+                настроенный статус склада для подтверждения оплаты или отмены.
+              </p>
             </div>
             <button
               type="button"
               className="admin-secondary-button"
-              onClick={() => void loadOrders()}
-              disabled={ordersLoading}
+              onClick={() => {
+                void loadOrders();
+                void loadOrderStates();
+              }}
+              disabled={ordersLoading || orderActionBusyId !== ""}
             >
               {ordersLoading ? "Загружаем…" : "Обновить"}
             </button>
@@ -1101,9 +1208,11 @@ export default function AdminPanel({
                     <span>
                       {order.moyskladStatus
                         ? `${isUnsuccessfulMoyskladStatus(order.moyskladStatus, order.moyskladStatusType) ? "Не принят — " : "МойСклад — "}${order.moyskladStatus}`
-                        : order.status === "REJECTED"
-                          ? "Отклонен"
-                          : "Ожидает подтверждения"}
+                        : order.status === "PAID"
+                          ? "Оплата подтверждена"
+                          : order.status === "REJECTED"
+                            ? "Отклонен"
+                            : "Ожидает подтверждения"}
                     </span>
                   </div>
                   <p>
@@ -1140,11 +1249,97 @@ export default function AdminPanel({
                       </span>
                     )}
                   </div>
+                  {order.status === "PENDING" && order.moyskladOrderId && (
+                    <div className="admin-order-actions">
+                      <label>
+                        Статус МойСклад после оплаты
+                        <select
+                          value={orderStateById[order.id]?.paid ?? ""}
+                          onChange={(event) =>
+                            setOrderStateById((current) => ({
+                              ...current,
+                              [order.id]: {
+                                ...current[order.id],
+                                paid: event.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          <option value="">Выберите статус</option>
+                          {orderStates.map((state) => (
+                            <option value={state.id} key={state.id}>
+                              {state.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        Статус МойСклад при отмене
+                        <select
+                          value={orderStateById[order.id]?.rejected ?? ""}
+                          onChange={(event) =>
+                            setOrderStateById((current) => ({
+                              ...current,
+                              [order.id]: {
+                                ...current[order.id],
+                                rejected: event.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          <option value="">Выберите статус</option>
+                          {orderStates.map((state) => (
+                            <option value={state.id} key={state.id}>
+                              {state.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="admin-save-button"
+                        onClick={() => void updateOrderStatus(order, "paid")}
+                        disabled={
+                          orderActionBusyId !== "" ||
+                          !orderStateById[order.id]?.paid ||
+                          !orderStatesLoaded
+                        }
+                      >
+                        {orderActionBusyId === order.id
+                          ? "Сохраняем…"
+                          : "Подтвердить оплату"}
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-secondary-button"
+                        onClick={() => void updateOrderStatus(order, "rejected")}
+                        disabled={
+                          orderActionBusyId !== "" ||
+                          !orderStateById[order.id]?.rejected ||
+                          !orderStatesLoaded
+                        }
+                      >
+                        Отклонить заказ
+                      </button>
+                    </div>
+                  )}
+                  {canDeleteOrders && (
+                    <button
+                      type="button"
+                      className="admin-delete-button"
+                      onClick={() => void deleteOrder(order)}
+                      disabled={orderActionBusyId !== ""}
+                    >
+                      Удалить локальный журнал заказа
+                    </button>
+                  )}
                 </article>
               ))}
             </div>
           )}
         </section>
+      ) : (
+        <AdminUsersPanel role={role} currentUserId={currentUserId} />
       )}
       {teaPendingDeletion && (
         <div

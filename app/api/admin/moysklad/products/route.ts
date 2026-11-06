@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { authorizeStaff } from "@/lib/admin-auth";
 import {
   getMoyskladProduct,
   MoyskladError,
@@ -7,12 +7,8 @@ import {
 } from "@/lib/moysklad";
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json(
-      { error: "Требуется вход администратора." },
-      { status: 401 },
-    );
-  }
+  const access = await authorizeStaff();
+  if (!access.authorized) return access.response;
 
   const url = new URL(request.url);
   const id = url.searchParams.get("id")?.trim();

@@ -30,6 +30,12 @@ type MoyskladEntity = {
   meta: { href: string };
 };
 
+export type MoyskladOrderState = {
+  id: string;
+  name: string;
+  stateType: string | null;
+};
+
 type MoyskladApiError = {
   errors?: { error?: string }[];
 };
@@ -265,6 +271,54 @@ export async function getMoyskladCustomerOrderStatus(orderId: string) {
     }
     throw error;
   }
+}
+
+export async function getMoyskladCustomerOrderStates() {
+  const metadata = await request<{
+    states?: {
+      id?: string;
+      name?: string;
+      stateType?: string;
+      meta?: { href?: string };
+    }[];
+  }>("/entity/customerorder/metadata");
+  if (!Array.isArray(metadata.states)) {
+    throw new MoyskladError("МойСклад не вернул статусы заказов.");
+  }
+
+  return metadata.states.map((state) => {
+    const id =
+      typeof state.id === "string"
+        ? state.id
+        : state.meta?.href?.split("/").pop();
+    if (!id || typeof state.name !== "string" || !state.name) {
+      throw new MoyskladError("МойСклад вернул некорректный статус заказа.");
+    }
+    return {
+      id,
+      name: state.name,
+      stateType: typeof state.stateType === "string" ? state.stateType : null,
+    };
+  });
+}
+
+export async function setMoyskladCustomerOrderState(
+  orderId: string,
+  stateId: string,
+) {
+  await request(`/entity/customerorder/${encodeURIComponent(orderId)}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      state: {
+        meta: {
+          href: `${API_URL}/entity/customerorder/metadata/states/${encodeURIComponent(stateId)}`,
+          type: "state",
+          mediaType: "application/json",
+        },
+      },
+    }),
+  });
+  return getMoyskladCustomerOrderStatus(orderId);
 }
 
 export async function createMoyskladCustomerOrder({

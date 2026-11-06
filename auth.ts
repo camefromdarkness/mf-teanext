@@ -201,12 +201,35 @@ const telegramProvider: OIDCConfig<TelegramProfile> = {
   },
 };
 
+function superAdminTelegramIds() {
+  const configuredIds = process.env.SUPER_ADMIN_TELEGRAM_IDS ?? "1011596994";
+  return new Set(
+    configuredIds
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean),
+  );
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
   providers: [vkIdProvider, telegramProvider],
   pages: { signIn: "/auth/signin" },
   session: { strategy: "database" },
   callbacks: {
+    async signIn({ user, account }) {
+      if (
+        account?.provider === "telegram" &&
+        superAdminTelegramIds().has(account.providerAccountId) &&
+        user.id
+      ) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { role: "SUPER_ADMIN" },
+        });
+      }
+      return true;
+    },
     session({ session, user }) {
       if (session.user) {
         session.user.id = user.id;

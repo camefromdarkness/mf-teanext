@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { authorizeStaff } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 import { toTea } from "@/lib/teas";
 
@@ -101,9 +101,8 @@ function parseTeaInput(value: unknown): TeaInput | null {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
-  }
+  const access = await authorizeStaff();
+  if (!access.authorized) return access.response;
 
   let body: unknown;
   try {
@@ -129,6 +128,12 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Проверьте поля и фотографии товара." },
       { status: 400 },
+    );
+  }
+  if (input.id && access.staff.role === "MANAGER") {
+    return NextResponse.json(
+      { error: "Менеджер может добавлять товары, но не редактировать существующие." },
+      { status: 403 },
     );
   }
 
@@ -206,9 +211,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
-  }
+  const access = await authorizeStaff(["ADMIN", "SUPER_ADMIN"]);
+  if (!access.authorized) return access.response;
 
   let body: unknown;
   try {
@@ -250,9 +254,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
-  }
+  const access = await authorizeStaff(["ADMIN", "SUPER_ADMIN"]);
+  if (!access.authorized) return access.response;
 
   let body: unknown;
   try {

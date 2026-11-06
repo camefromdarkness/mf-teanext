@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { authorizeStaff } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json(
-      { error: "Требуется вход администратора." },
-      { status: 401 },
-    );
-  }
+  const access = await authorizeStaff();
+  if (!access.authorized) return access.response;
 
   let body: unknown;
   try {

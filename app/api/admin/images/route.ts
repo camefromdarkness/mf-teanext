@@ -3,7 +3,7 @@ import { mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { NextResponse } from "next/server";
-import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { authorizeStaff } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
 const MAX_FILE_SIZE = 8 * 1024 * 1024;
@@ -11,9 +11,8 @@ const MAX_REQUEST_SIZE = MAX_FILE_SIZE + 64 * 1024;
 const MAX_PIXELS = 36_000_000;
 
 export async function GET() {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
-  }
+  const access = await authorizeStaff();
+  if (!access.authorized) return access.response;
 
   try {
     const directory = path.join(process.cwd(), "public", "uploads", "teas");
@@ -45,9 +44,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAdminAuthenticated())) {
-    return NextResponse.json({ error: "Требуется вход администратора." }, { status: 401 });
-  }
+  const access = await authorizeStaff();
+  if (!access.authorized) return access.response;
 
   const rawContentLength = request.headers.get("content-length");
   if (rawContentLength && !/^\d+$/.test(rawContentLength)) {

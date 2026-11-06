@@ -96,6 +96,11 @@ async function AccountContent() {
                 phoneNumber={profile.phoneNumber ?? ""}
                 publicId={profile.publicId}
               />
+              {profile.role !== "CUSTOMER" && (
+                <Link className="account-admin-link" href="/admin">
+                  Открыть панель управления
+                </Link>
+              )}
             </>
           }
           ordersContent={
@@ -151,9 +156,11 @@ async function AccountContent() {
                           <span className="account-order-status">
                             {order.moyskladStatus
                               ? `МойСклад: ${order.moyskladStatus}`
-                              : order.status === "REJECTED"
-                                ? "Отклонен магазином"
-                                : "Ожидает подтверждения"}
+                              : order.status === "PAID"
+                                ? "Оплата подтверждена"
+                                : order.status === "REJECTED"
+                                  ? "Отклонен магазином"
+                                  : "Ожидает подтверждения"}
                           </span>
                         </div>
                         <ul>
@@ -180,6 +187,10 @@ async function AccountContent() {
                         order.status === "REJECTED" ? (
                           <p className="account-order-note">
                             Этот заказ отменён или удалён в МойСклад.
+                          </p>
+                        ) : order.status === "PAID" ? (
+                          <p className="account-order-note">
+                            Оплата заказа подтверждена магазином.
                           </p>
                         ) : order.moyskladSyncRequired &&
                           !order.moyskladOrderId ? (

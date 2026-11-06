@@ -9,11 +9,14 @@ datasource db {
 
 enum UserRole {
   CUSTOMER
+  MANAGER
   ADMIN
+  SUPER_ADMIN
 }
 
 enum OrderStatus {
   PENDING
+  PAID
   REJECTED
 }
 

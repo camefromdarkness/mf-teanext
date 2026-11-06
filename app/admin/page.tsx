@@ -1,7 +1,8 @@
 import { Suspense } from "react";
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
 import AdminPanel from "@/components/AdminPanel";
-import { isAdminAuthenticated } from "@/lib/admin-auth";
+import { getStaffUser } from "@/lib/admin-auth";
 import { getAllTeas } from "@/lib/teas";
 
 export const metadata = {
@@ -25,12 +26,14 @@ export default function AdminPage() {
 
 async function AdminContent() {
   await connection();
-  const authenticated = await isAdminAuthenticated();
-  const teas = authenticated ? await getAllTeas() : [];
+  const staff = await getStaffUser();
+  if (!staff) redirect("/account");
+  const teas = await getAllTeas();
   return (
     <AdminPanel
-      key={authenticated ? "admin" : "guest"}
-      authenticated={authenticated}
+      key={staff.role}
+      role={staff.role}
+      currentUserId={staff.id}
       initialTeas={teas}
     />
   );
