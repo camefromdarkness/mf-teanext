@@ -27,6 +27,12 @@ type Draft = Omit<
 
 type MoyskladProduct = { id: string; name: string; code: string };
 type MoyskladOrderState = { id: string; name: string; stateType: string | null };
+type PendingOrderAction = {
+  order: AdminOrder;
+  action: "paid" | "rejected" | "delete";
+  stateId?: string;
+  stateName?: string;
+};
 
 type AdminOrder = {
   id: string;
@@ -176,6 +182,8 @@ export default function AdminPanel({
   const [orderStates, setOrderStates] = useState<MoyskladOrderState[]>([]);
   const [orderStatesLoaded, setOrderStatesLoaded] = useState(false);
   const [orderActionBusyId, setOrderActionBusyId] = useState("");
+  const [pendingOrderAction, setPendingOrderAction] =
+    useState<PendingOrderAction | null>(null);
   const [orderStateById, setOrderStateById] = useState<
     Record<string, { paid?: string; rejected?: string }>
   >({});
@@ -193,6 +201,18 @@ export default function AdminPanel({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [teaPendingDeletion, busy]);
+
+  useEffect(() => {
+    if (!pendingOrderAction) return;
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && !orderActionBusyId) {
+        setPendingOrderAction(null);
+        setOrdersError("");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pendingOrderAction, orderActionBusyId]);
 
   async function readError(response: Response) {
     const body = (await response.json().catch(() => null)) as
@@ -263,7 +283,7 @@ export default function AdminPanel({
     }
   }
 
-  async function updateOrderStatus(
+  function requestOrderStatus(
     order: AdminOrder,
     decision: "paid" | "rejected",
   ) {
@@ -277,16 +297,20 @@ export default function AdminPanel({
       setOrdersError("Выбранный статус не найден. Обновите список статусов.");
       return;
     }
-    const actionText =
-      decision === "paid" ? "подтвердить оплату" : "отклонить заказ";
-    if (
-      !window.confirm(
-        `Вы уверены, что хотите ${actionText} и установить в МойСклад статус «${selectedState.name}»?`,
-      )
-    ) {
-      return;
-    }
+    setOrdersError("");
+    setPendingOrderAction({
+      order,
+      action: decision,
+      stateId,
+      stateName: selectedState.name,
+    });
+  }
 
+  async function updateOrderStatus(
+    order: AdminOrder,
+    decision: "paid" | "rejected",
+    stateId: string,
+  ) {
     setOrderActionBusyId(order.id);
     setOrdersError("");
     try {
@@ -315,6 +339,7 @@ export default function AdminPanel({
             : item,
         ),
       );
+      setPendingOrderAction(null);
     } catch (requestError) {
       console.error("Не удалось изменить статус заказа.", requestError);
       setOrdersError("Не удалось изменить статус заказа.");
@@ -323,14 +348,12 @@ export default function AdminPanel({
     }
   }
 
+  function requestDeleteOrder(order: AdminOrder) {
+    setOrdersError("");
+    setPendingOrderAction({ order, action: "delete" });
+  }
+
   async function deleteOrder(order: AdminOrder) {
-    if (
-      !window.confirm(
-        "Удалить запись заказа из локальной базы? Документ МойСклад и данные склада останутся без изменений.",
-      )
-    ) {
-      return;
-    }
     setOrderActionBusyId(order.id);
     setOrdersError("");
     try {
@@ -344,11 +367,22 @@ export default function AdminPanel({
         return;
       }
       setOrders((current) => current.filter((item) => item.id !== order.id));
+      setPendingOrderAction(null);
     } catch (requestError) {
       console.error("Не удалось удалить локальную запись заказа.", requestError);
       setOrdersError("Не удалось удалить запись заказа.");
     } finally {
       setOrderActionBusyId("");
+    }
+  }
+
+  function confirmOrderAction() {
+    if (!pendingOrderAction) return;
+    const { order, action, stateId } = pendingOrderAction;
+    if (action === "delete") {
+      void deleteOrder(order);
+    } else if (stateId) {
+      void updateOrderStatus(order, action, stateId);
     }
   }
 
@@ -1166,8 +1200,9 @@ export default function AdminPanel({
             <div>
               <h2>Заказы</h2>
               <p>
-                Заказ резервирует остатки в МойСклад при создании. Выберите
-                настроенный статус склада для подтверждения оплаты или отмены.
+                При оплате товар остаётся зарезервированным до отгрузки. При
+                отмене резерв снимается и товар возвращается в доступный
+                остаток МойСклад.
               </p>
             </div>
             <button
@@ -1266,11 +1301,13 @@ export default function AdminPanel({
                           }
                         >
                           <option value="">Выберите статус</option>
-                          {orderStates.map((state) => (
+                          {orderStates
+                            .filter((state) => state.stateType === "Regular")
+                            .map((state) => (
                             <option value={state.id} key={state.id}>
                               {state.name}
                             </option>
-                          ))}
+                            ))}
                         </select>
                       </label>
                       <label>
@@ -1288,17 +1325,19 @@ export default function AdminPanel({
                           }
                         >
                           <option value="">Выберите статус</option>
-                          {orderStates.map((state) => (
+                          {orderStates
+                            .filter((state) => state.stateType === "Unsuccessful")
+                            .map((state) => (
                             <option value={state.id} key={state.id}>
                               {state.name}
                             </option>
-                          ))}
+                            ))}
                         </select>
                       </label>
                       <button
                         type="button"
                         className="admin-save-button"
-                        onClick={() => void updateOrderStatus(order, "paid")}
+                        onClick={() => requestOrderStatus(order, "paid")}
                         disabled={
                           orderActionBusyId !== "" ||
                           !orderStateById[order.id]?.paid ||
@@ -1312,7 +1351,7 @@ export default function AdminPanel({
                       <button
                         type="button"
                         className="admin-secondary-button"
-                        onClick={() => void updateOrderStatus(order, "rejected")}
+                        onClick={() => requestOrderStatus(order, "rejected")}
                         disabled={
                           orderActionBusyId !== "" ||
                           !orderStateById[order.id]?.rejected ||
@@ -1327,7 +1366,7 @@ export default function AdminPanel({
                     <button
                       type="button"
                       className="admin-delete-button"
-                      onClick={() => void deleteOrder(order)}
+                      onClick={() => requestDeleteOrder(order)}
                       disabled={orderActionBusyId !== ""}
                     >
                       Удалить локальный журнал заказа
@@ -1380,6 +1419,106 @@ export default function AdminPanel({
                 disabled={busy}
               >
                 {busy ? "Удаление…" : "Да, удалить"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {pendingOrderAction && (
+        <div
+          className="admin-confirm-overlay"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !orderActionBusyId
+            ) {
+              setPendingOrderAction(null);
+              setOrdersError("");
+            }
+          }}
+        >
+          <section
+            className="admin-confirm-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="order-action-title"
+            aria-describedby="order-action-description"
+          >
+            <p className="tea-category-label">
+              {pendingOrderAction.action === "delete"
+                ? "УДАЛЕНИЕ ЗАПИСИ"
+                : pendingOrderAction.action === "paid"
+                  ? "ПОДТВЕРЖДЕНИЕ ОПЛАТЫ"
+                  : "ОТМЕНА ЗАКАЗА"}
+            </p>
+            <h2 id="order-action-title">
+              {pendingOrderAction.action === "delete"
+                ? "Удалить запись заказа?"
+                : pendingOrderAction.action === "paid"
+                  ? "Подтвердить оплату заказа?"
+                  : "Отклонить заказ?"}
+            </h2>
+            <p id="order-action-description">
+              {pendingOrderAction.action === "delete" ? (
+                <>
+                  Запись заказа №
+                  {pendingOrderAction.order.id.slice(-8).toUpperCase()} будет
+                  удалена из базы сайта. Документ МойСклад и складские остатки
+                  не изменятся. Действие нельзя отменить.
+                </>
+              ) : pendingOrderAction.action === "paid" ? (
+                <>
+                  Подтвердить оплату заказа №
+                  {pendingOrderAction.order.id.slice(-8).toUpperCase()} и
+                  установить в МойСклад статус «
+                  {pendingOrderAction.stateName}»? Товар останется в резерве до
+                  отгрузки.
+                </>
+              ) : (
+                <>
+                  Отклонить заказ №
+                  {pendingOrderAction.order.id.slice(-8).toUpperCase()}, снять
+                  резерв и установить в МойСклад статус «
+                  {pendingOrderAction.stateName}»? Товар вернётся в доступный
+                  остаток.
+                </>
+              )}
+            </p>
+            {ordersError && (
+              <p className="admin-error" role="alert">
+                {ordersError}
+              </p>
+            )}
+            <div className="admin-confirm-actions">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => {
+                  setPendingOrderAction(null);
+                  setOrdersError("");
+                }}
+                disabled={orderActionBusyId !== ""}
+                autoFocus
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className={
+                  pendingOrderAction.action === "paid"
+                    ? "admin-confirm-primary-button"
+                    : "admin-confirm-delete-button"
+                }
+                onClick={confirmOrderAction}
+                disabled={orderActionBusyId !== ""}
+              >
+                {orderActionBusyId
+                  ? "Выполняем…"
+                  : pendingOrderAction.action === "delete"
+                    ? "Да, удалить"
+                    : pendingOrderAction.action === "paid"
+                      ? "Да, подтвердить"
+                      : "Да, отклонить"}
               </button>
             </div>
           </section>

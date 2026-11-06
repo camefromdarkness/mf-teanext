@@ -2054,7 +2054,8 @@
     }
 
     .admin-confirm-actions .admin-secondary-button,
-    .admin-confirm-delete-button {
+    .admin-confirm-delete-button,
+    .admin-confirm-primary-button {
         min-height: 42px;
         padding: 9px 16px;
         border: 1px solid #383838;
@@ -2071,6 +2072,18 @@
 
     .admin-confirm-delete-button:hover:not(:disabled) {
         background: #914747;
+    }
+
+    .admin-confirm-primary-button {
+        border-color: #d6bd7f;
+        background: #d6bd7f;
+        color: #14110a;
+        font-weight: 600;
+    }
+
+    .admin-confirm-primary-button:hover:not(:disabled) {
+        border-color: #ead49a;
+        background: #ead49a;
     }
 
     @keyframes confirm-dialog-enter {

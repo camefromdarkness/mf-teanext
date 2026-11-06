@@ -305,19 +305,111 @@ export async function getMoyskladCustomerOrderStates() {
 export async function setMoyskladCustomerOrderState(
   orderId: string,
   stateId: string,
+  releaseReserve: boolean,
 ) {
-  await request(`/entity/customerorder/${encodeURIComponent(orderId)}`, {
-    method: "PUT",
-    body: JSON.stringify({
-      state: {
-        meta: {
-          href: `${API_URL}/entity/customerorder/metadata/states/${encodeURIComponent(stateId)}`,
-          type: "state",
-          mediaType: "application/json",
+  const encodedOrderId = encodeURIComponent(orderId);
+  const releasedPositions: { id: string; reserve: number }[] = [];
+
+  if (releaseReserve) {
+    const positions = await request<
+      MoyskladList<{ id?: string; reserve?: number }>
+    >(`/entity/customerorder/${encodedOrderId}/positions`);
+    if (!Array.isArray(positions.rows)) {
+      throw new MoyskladError("МойСклад не вернул позиции заказа.");
+    }
+
+    try {
+      for (const position of positions.rows) {
+        if (typeof position.id !== "string" || !position.id) {
+          throw new MoyskladError(
+            "МойСклад вернул позицию заказа без идентификатора.",
+          );
+        }
+        if (
+          typeof position.reserve !== "number" ||
+          !Number.isFinite(position.reserve)
+        ) {
+          throw new MoyskladError(
+            "МойСклад вернул некорректное значение резерва заказа.",
+          );
+        }
+        if (position.reserve <= 0) continue;
+
+        await request(
+          `/entity/customerorder/${encodedOrderId}/positions/${encodeURIComponent(position.id)}`,
+          {
+            method: "PUT",
+            body: JSON.stringify({ reserve: 0 }),
+          },
+        );
+        releasedPositions.push({ id: position.id, reserve: position.reserve });
+      }
+    } catch (error) {
+      try {
+        await Promise.all(
+          releasedPositions.map((position) =>
+            request(
+              `/entity/customerorder/${encodedOrderId}/positions/${encodeURIComponent(position.id)}`,
+              {
+                method: "PUT",
+                body: JSON.stringify({ reserve: position.reserve }),
+              },
+            ),
+          ),
+        );
+      } catch (restoreError) {
+        console.error(
+          `Не удалось восстановить резерв заказа МойСклад ${orderId} после ошибки снятия резерва.`,
+          restoreError,
+        );
+        throw new MoyskladError(
+          "Не удалось полностью снять резерв и восстановить изменения. Проверьте заказ в МойСклад.",
+        );
+      }
+      throw error;
+    }
+  }
+
+  try {
+    await request(`/entity/customerorder/${encodedOrderId}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        state: {
+          meta: {
+            href: `${API_URL}/entity/customerorder/metadata/states/${encodeURIComponent(stateId)}`,
+            type: "state",
+            mediaType: "application/json",
+          },
         },
-      },
-    }),
-  });
+      }),
+    });
+  } catch (error) {
+    if (releasedPositions.length > 0) {
+      try {
+        await Promise.all(
+          releasedPositions.map((position) =>
+            request(
+              `/entity/customerorder/${encodedOrderId}/positions/${encodeURIComponent(position.id)}`,
+              {
+                method: "PUT",
+                body: JSON.stringify({ reserve: position.reserve }),
+              },
+            ),
+          ),
+        );
+      } catch (restoreError) {
+        console.error(
+          `Не удалось восстановить резерв заказа МойСклад ${orderId} после ошибки смены статуса.`,
+          restoreError,
+        );
+        throw new MoyskladError(
+          "Не удалось изменить статус заказа и восстановить резерв. Проверьте заказ в МойСклад.",
+        );
+      }
+    }
+    throw error;
+  }
+
   return getMoyskladCustomerOrderStatus(orderId);
 }
 

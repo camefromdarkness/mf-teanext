@@ -69,10 +69,26 @@ export async function PATCH(request: Request, context: RouteContext) {
         { status: 409 },
       );
     }
+    if (
+      (body.decision === "paid" && selectedState.stateType !== "Regular") ||
+      (body.decision === "rejected" &&
+        selectedState.stateType !== "Unsuccessful")
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            body.decision === "paid"
+              ? "Для оплаченного заказа выберите обычный статус: резерв сохраняется до отгрузки."
+              : "Для отмены выберите статус типа «Неуспешный»: резерв будет снят.",
+        },
+        { status: 400 },
+      );
+    }
 
     const moyskladStatus = await setMoyskladCustomerOrderState(
       order.moyskladOrderId,
       selectedState.id,
+      body.decision === "rejected",
     );
     const updated = await prisma.order.update({
       where: { id: order.id },
