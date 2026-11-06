@@ -23,6 +23,7 @@ type MoyskladProduct = {
 type MoyskladStockRow = {
   meta?: { href?: string };
   quantity?: number;
+  reserve?: number;
 };
 
 type MoyskladEntity = {
@@ -177,11 +178,16 @@ export async function getMoyskladAvailableStock(assortmentIds: string[]) {
       if (!assortmentId || !assortmentSet.has(assortmentId)) continue;
       if (
         typeof row.quantity !== "number" ||
-        !Number.isFinite(row.quantity)
+        !Number.isFinite(row.quantity) ||
+        (row.reserve !== undefined &&
+          (typeof row.reserve !== "number" || !Number.isFinite(row.reserve)))
       ) {
         throw new MoyskladError("МойСклад вернул некорректное количество товара.");
       }
-      stock.set(assortmentId, Math.max(0, row.quantity));
+      stock.set(
+        assortmentId,
+        Math.max(0, row.quantity - (row.reserve ?? 0)),
+      );
     }
 
     if (result.rows.length < limit) break;

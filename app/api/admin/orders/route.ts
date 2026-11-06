@@ -7,34 +7,54 @@ import {
 import { authorizeStaff } from "@/lib/admin-auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+const PAGE_SIZE = 30;
+const MAX_STATUS_SYNC_PER_PAGE = 10;
+
+export async function GET(request: Request) {
   const access = await authorizeStaff();
   if (!access.authorized) return access.response;
 
   try {
+    const rawPage = new URL(request.url).searchParams.get("page") ?? "1";
+    if (!/^[1-9]\d*$/.test(rawPage) || !Number.isSafeInteger(Number(rawPage))) {
+      return NextResponse.json({ error: "Некорректный номер страницы." }, { status: 400 });
+    }
+    const requestedPage = Number(rawPage);
+    const total = await prisma.order.count();
+    const totalPages = Math.ceil(total / PAGE_SIZE);
+    const page = Math.min(requestedPage, Math.max(totalPages, 1));
     const orders = await prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        contactName: true,
-        phoneNumber: true,
-        status: true,
-        total: true,
-        createdAt: true,
-        moyskladOrderId: true,
-        moyskladStatus: true,
-        moyskladStatusType: true,
-        items: {
-          select: {
-            id: true,
-            teaName: true,
-            teaUnit: true,
-            quantity: true,
-            unitPrice: true,
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+        select: {
+          id: true,
+          contactName: true,
+          phoneNumber: true,
+          status: true,
+          total: true,
+          createdAt: true,
+          moyskladOrderId: true,
+          moyskladStatus: true,
+          moyskladStatusType: true,
+          items: {
+            select: {
+              id: true,
+              teaName: true,
+              teaUnit: true,
+              quantity: true,
+              unitPrice: true,
+            },
           },
         },
-      },
-    });
+      });
+
+    const syncIds = new Set(
+      orders
+        .filter((order) => order.status === "PENDING" && order.moyskladOrderId)
+        .slice(0, MAX_STATUS_SYNC_PER_PAGE)
+        .map((order) => order.id),
+    );
 
     let statusSyncFailed = false;
     const synchronizedOrders = [];
@@ -43,7 +63,7 @@ export async function GET() {
       synchronizedOrders.push(
         ...(await Promise.all(
           batch.map(async (order) => {
-            if (!order.moyskladOrderId || order.status !== "PENDING") return order;
+            if (!order.moyskladOrderId || !syncIds.has(order.id)) return order;
             try {
               const externalStatus = await getMoyskladCustomerOrderStatus(
                 order.moyskladOrderId,
@@ -94,12 +114,21 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json(synchronizedOrders, {
-      headers: {
-        "Cache-Control": "no-store",
-        "X-Moysklad-Status-Sync": statusSyncFailed ? "failed" : "ok",
+    return NextResponse.json(
+      {
+        orders: synchronizedOrders,
+        page,
+        pageSize: PAGE_SIZE,
+        total,
+        totalPages,
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store",
+          "X-Moysklad-Status-Sync": statusSyncFailed ? "failed" : "ok",
+        },
+      },
+    );
   } catch (error) {
     console.error("Не удалось загрузить заказы для админ-панели.", error);
     const isMoyskladFailure = error instanceof MoyskladError;

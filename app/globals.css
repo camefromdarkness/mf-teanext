@@ -2267,6 +2267,15 @@
     .admin-order time,
     .admin-order-footer span { color: #888; font-size: 0.85rem; }
     .admin-orders-list { display: grid; gap: 14px; }
+    .admin-orders-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 8px 0;
+        color: #aaa;
+        font-size: 0.88rem;
+    }
     .admin-order {
         display: grid;
         gap: 14px;
@@ -2337,6 +2346,9 @@
     .admin-image-card label { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 7px; font-size: 0.76rem; }
     .admin-media-image { display: grid; gap: 6px; border: 1px solid #303030; padding: 7px; background: #101010; color: #ccc; font-size: 0.78rem; }
     .admin-media-image:disabled { opacity: 0.45; }
+    .admin-media-item { display: grid; align-content: start; gap: 6px; }
+    .admin-media-delete { padding: 6px; border: 1px solid #493030; background: #170b0b; color: #d19a9a; font-size: 0.72rem; }
+    .admin-media-delete:disabled { opacity: 0.5; cursor: not-allowed; }
     .admin-remove-image { padding: 6px; border: 1px solid #393939; background: transparent; color: #aaa; }
 
     @media (max-width: 700px) {

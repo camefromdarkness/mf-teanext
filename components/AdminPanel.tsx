@@ -53,6 +53,13 @@ type AdminOrder = {
   }[];
 };
 
+type MediaImage = {
+  url: string;
+  alt: string;
+  uploaded?: boolean;
+  inUse?: boolean;
+};
+
 function isUnsuccessfulMoyskladStatus(
   status: string | null,
   statusType: string | null,
@@ -155,7 +162,7 @@ export default function AdminPanel({
   const [detailsText, setDetailsText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [mediaImages, setMediaImages] = useState<{ url: string; alt: string }[]>([]);
+  const [mediaImages, setMediaImages] = useState<MediaImage[]>([]);
   const [mediaOpen, setMediaOpen] = useState(false);
   const [moyskladSearch, setMoyskladSearch] = useState("");
   const [moyskladProducts, setMoyskladProducts] = useState<MoyskladProduct[]>([]);
@@ -177,6 +184,9 @@ export default function AdminPanel({
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersPage, setOrdersPage] = useState(1);
+  const [ordersTotalPages, setOrdersTotalPages] = useState(1);
+  const [ordersTotal, setOrdersTotal] = useState(0);
   const [ordersError, setOrdersError] = useState("");
   const [ordersNotice, setOrdersNotice] = useState("");
   const [orderStates, setOrderStates] = useState<MoyskladOrderState[]>([]);
@@ -221,21 +231,41 @@ export default function AdminPanel({
     return body?.error ?? "Не удалось выполнить запрос.";
   }
 
-  async function loadOrders() {
+  async function loadOrders(page = ordersPage) {
     setOrdersLoading(true);
     setOrdersError("");
     setOrdersNotice("");
     try {
-      const response = await fetch("/api/admin/orders", { cache: "no-store" });
+      const response = await fetch(`/api/admin/orders?page=${page}`, {
+        cache: "no-store",
+      });
       if (!response.ok) {
         setOrdersError(await readError(response));
         return;
       }
       const result: unknown = await response.json();
-      if (!Array.isArray(result) || !result.every(isAdminOrder)) {
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("orders" in result) ||
+        !Array.isArray(result.orders) ||
+        !result.orders.every(isAdminOrder) ||
+        !("page" in result) ||
+        typeof result.page !== "number" ||
+        !Number.isSafeInteger(result.page) ||
+        !("totalPages" in result) ||
+        typeof result.totalPages !== "number" ||
+        !Number.isSafeInteger(result.totalPages) ||
+        !("total" in result) ||
+        typeof result.total !== "number" ||
+        !Number.isSafeInteger(result.total)
+      ) {
         throw new Error("Сервер вернул некорректный список заказов.");
       }
-      setOrders(result);
+      setOrders(result.orders);
+      setOrdersPage(result.page);
+      setOrdersTotalPages(Math.max(1, result.totalPages));
+      setOrdersTotal(result.total);
       if (response.headers.get("X-Moysklad-Status-Sync") === "failed") {
         setOrdersNotice(
           "Не удалось обновить статусы из МойСклад. Показаны последние сохранённые данные.",
@@ -366,8 +396,10 @@ export default function AdminPanel({
         setOrdersError(await readError(response));
         return;
       }
-      setOrders((current) => current.filter((item) => item.id !== order.id));
       setPendingOrderAction(null);
+      await loadOrders(
+        orders.length === 1 && ordersPage > 1 ? ordersPage - 1 : ordersPage,
+      );
     } catch (requestError) {
       console.error("Не удалось удалить локальную запись заказа.", requestError);
       setOrdersError("Не удалось удалить запись заказа.");
@@ -404,7 +436,7 @@ export default function AdminPanel({
       setMediaImages((current) =>
         current.some((image) => image.url === result.url)
           ? current
-          : [...current, { url: result.url, alt: draft.name }],
+          : [...current, { url: result.url, alt: draft.name, uploaded: true }],
       );
       setDraft((current) => ({
         ...current,
@@ -731,7 +763,7 @@ export default function AdminPanel({
         setError(await readError(response));
         return;
       }
-      setMediaImages((await response.json()) as { url: string; alt: string }[]);
+      setMediaImages((await response.json()) as MediaImage[]);
     } catch (requestError) {
       console.error("Не удалось получить каталог изображений.", requestError);
       setError("Не удалось загрузить список фотографий.");
@@ -758,6 +790,35 @@ export default function AdminPanel({
           },
     );
     setMediaOpen(false);
+  }
+
+  async function deleteLibraryImage(image: MediaImage) {
+    if (!image.uploaded || image.inUse) return;
+    if (!window.confirm("Удалить загруженную фотографию? Это действие нельзя отменить.")) {
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/admin/images", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: image.url }),
+      });
+      if (!response.ok) {
+        setError(await readError(response));
+        return;
+      }
+      setMediaImages((current) =>
+        current.filter((item) => item.url !== image.url),
+      );
+    } catch (requestError) {
+      console.error("Не удалось удалить фотографию.", requestError);
+      setError("Не удалось удалить фотографию.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -1088,16 +1149,42 @@ export default function AdminPanel({
           {mediaOpen && (
             <div className="admin-media-library">
               {mediaImages.length ? mediaImages.map((image) => (
-                <button
-                  type="button"
-                  className="admin-media-image"
-                  key={image.url}
-                  disabled={draft.images.some((item) => item.url === image.url)}
-                  onClick={() => addImageFromLibrary(image)}
-                >
-                  <span><Image src={image.url} alt={image.alt} fill sizes="100px" /></span>
-                  {draft.images.some((item) => item.url === image.url) ? "Уже выбрано" : "Добавить"}
-                </button>
+                <div className="admin-media-item" key={image.url}>
+                  <button
+                    type="button"
+                    className="admin-media-image"
+                    disabled={draft.images.some((item) => item.url === image.url)}
+                    onClick={() => addImageFromLibrary(image)}
+                  >
+                    <span><Image src={image.url} alt={image.alt} fill sizes="100px" /></span>
+                    {draft.images.some((item) => item.url === image.url) ? "Уже выбрано" : "Добавить"}
+                  </button>
+                  {canDeleteOrders && image.uploaded && (
+                    <button
+                      type="button"
+                      className="admin-media-delete"
+                      disabled={
+                        busy ||
+                        image.inUse ||
+                        draft.images.some((item) => item.url === image.url)
+                      }
+                      title={
+                        image.inUse
+                          ? "Сначала удалите фотографию из карточек товаров."
+                          : draft.images.some((item) => item.url === image.url)
+                            ? "Сначала уберите фотографию из текущего товара."
+                            : "Удалить загруженный файл"
+                      }
+                      onClick={() => void deleteLibraryImage(image)}
+                    >
+                      {image.inUse
+                        ? "Используется в каталоге"
+                        : draft.images.some((item) => item.url === image.url)
+                          ? "Выбрано в товаре"
+                          : "Удалить файл"}
+                    </button>
+                  )}
+                </div>
               )) : <p>В каталоге пока нет фотографий.</p>}
             </div>
           )}
@@ -1202,7 +1289,7 @@ export default function AdminPanel({
               <p>
                 При оплате товар остаётся зарезервированным до отгрузки. При
                 отмене резерв снимается и товар возвращается в доступный
-                остаток МойСклад.
+                остаток МойСклад. Всего заказов: {ordersTotal}.
               </p>
             </div>
             <button
@@ -1375,6 +1462,29 @@ export default function AdminPanel({
                 </article>
               ))}
             </div>
+          )}
+          {ordersTotalPages > 1 && (
+            <nav className="admin-orders-pagination" aria-label="Страницы заказов">
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => void loadOrders(ordersPage - 1)}
+                disabled={ordersLoading || ordersPage <= 1}
+              >
+                ← Новее
+              </button>
+              <span>
+                Страница {ordersPage} из {ordersTotalPages}
+              </span>
+              <button
+                type="button"
+                className="admin-secondary-button"
+                onClick={() => void loadOrders(ordersPage + 1)}
+                disabled={ordersLoading || ordersPage >= ordersTotalPages}
+              >
+                Старее →
+              </button>
+            </nav>
           )}
         </section>
       ) : (

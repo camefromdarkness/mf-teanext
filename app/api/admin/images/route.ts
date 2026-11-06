@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir } from "node:fs/promises";
+import { mkdir, readdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { NextResponse } from "next/server";
@@ -26,18 +26,105 @@ export async function GET() {
         withFileTypes: true,
       })),
     ]);
-    const images = new Map(registeredImages.map((image) => [image.url, image]));
+    const images = new Map(
+      registeredImages.map((image) => [
+        image.url,
+        { ...image, uploaded: image.url.startsWith("/api/uploads/teas/") },
+      ]),
+    );
     for (const file of files) {
       if (file.isFile() && /^[0-9a-f-]{36}\.webp$/i.test(file.name)) {
         const url = `/api/uploads/teas/${file.name}`;
-        if (!images.has(url)) images.set(url, { url, alt: "" });
+        if (!images.has(url)) {
+          images.set(url, { url, alt: "", uploaded: true });
+        }
       }
     }
-    return NextResponse.json([...images.values()]);
+    const usedImages = await prisma.teaImage.findMany({
+      where: { url: { in: [...images.keys()] } },
+      select: { url: true },
+      distinct: ["url"],
+    });
+    const usedUrls = new Set(usedImages.map((image) => image.url));
+    return NextResponse.json(
+      [...images.values()].map((image) => ({
+        ...image,
+        inUse: usedUrls.has(image.url),
+      })),
+      { headers: { "Cache-Control": "no-store" } },
+    );
   } catch (error) {
     console.error("Не удалось прочитать каталог изображений.", error);
     return NextResponse.json(
       { error: "Не удалось загрузить каталог изображений." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request) {
+  const access = await authorizeStaff(["ADMIN", "SUPER_ADMIN"]);
+  if (!access.authorized) return access.response;
+
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Некорректный запрос." }, { status: 400 });
+  }
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("url" in body) ||
+    typeof body.url !== "string"
+  ) {
+    return NextResponse.json(
+      { error: "Не выбрано загруженное изображение." },
+      { status: 400 },
+    );
+  }
+
+  const match = /^\/api\/uploads\/teas\/([0-9a-f-]{36}\.webp)$/i.exec(body.url);
+  if (!match) {
+    return NextResponse.json(
+      { error: "Удалять можно только загруженные фотографии." },
+      { status: 400 },
+    );
+  }
+  try {
+    const imageInUse = await prisma.teaImage.findFirst({
+      where: { url: body.url },
+      select: { id: true },
+    });
+    if (imageInUse) {
+      return NextResponse.json(
+        {
+          error:
+            "Эта фотография используется в каталоге. Уберите её из карточек товаров и повторите удаление.",
+        },
+        { status: 409 },
+      );
+    }
+
+    await unlink(
+      path.join(process.cwd(), "public", "uploads", "teas", match[1]),
+    );
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "ENOENT"
+    ) {
+      return NextResponse.json(
+        { error: "Файл фотографии уже удалён." },
+        { status: 404 },
+      );
+    }
+    console.error("Не удалось удалить загруженную фотографию.", error);
+    return NextResponse.json(
+      { error: "Не удалось удалить фотографию." },
       { status: 500 },
     );
   }
