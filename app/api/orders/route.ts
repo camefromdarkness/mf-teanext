@@ -286,7 +286,7 @@ export async function POST(request: Request) {
 
       try {
         order = await prisma.$transaction(async (tx) => {
-          await tx.$queryRaw`SELECT pg_advisory_xact_lock(846210, hashtext(${userId}))`;
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(846210, hashtext(${userId})) IS NULL`;
           const retry = await tx.order.findUnique({ where: { checkoutKey }, include: { items: true } });
           if (retry) return retry;
           const pendingCount = await tx.order.count({ where: { userId, status: "PENDING" } });
@@ -321,7 +321,7 @@ export async function POST(request: Request) {
     }
 
     order = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(846211, 1)`;
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(846211, 1) IS NULL`;
       const currentOrder = await tx.order.findUniqueOrThrow({ where: { id: order!.id }, include: { items: true } });
       if (currentOrder.moyskladOrderId) return currentOrder;
       const externalCode = `mf-web-${checkoutKey}`;
