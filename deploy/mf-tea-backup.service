@@ -1,0 +1,13 @@
+[Unit]
+Description=Local backup of MOON FLOWER PostgreSQL and uploaded photos
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/mf-tea
+Environment=ENV_FILE=/opt/mf-tea/.env.staging
+Environment=BACKUP_DIR=/var/backups/mf-tea
+Environment=RETENTION_DAYS=14
+ExecStart=/opt/mf-tea/scripts/backup-local.sh
