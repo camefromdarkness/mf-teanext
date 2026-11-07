@@ -66,6 +66,8 @@ function validateAvailableStock(
 class PendingOrderLimitError extends Error {}
 class StockChangedError extends MoyskladError {}
 
+const MAX_PENDING_ORDERS_PER_USER = 2;
+
 function orderResponse(order: {
   id: string;
   total: number;
@@ -290,7 +292,9 @@ export async function POST(request: Request) {
           const retry = await tx.order.findUnique({ where: { checkoutKey }, include: { items: true } });
           if (retry) return retry;
           const pendingCount = await tx.order.count({ where: { userId, status: "PENDING" } });
-          if (pendingCount >= 3) throw new PendingOrderLimitError();
+          if (pendingCount >= MAX_PENDING_ORDERS_PER_USER) {
+            throw new PendingOrderLimitError();
+          }
           return tx.order.create({
             data: { checkoutKey, moyskladSyncRequired: true, userId, contactName, phoneNumber, total, items: { create: preparedItems } },
             include: { items: true },
@@ -299,7 +303,11 @@ export async function POST(request: Request) {
       } catch (error) {
         if (error instanceof PendingOrderLimitError) {
           return NextResponse.json(
-            { error: "У вас уже есть 3 новых заказа. Дождитесь обработки или попросите магазин отменить один из них.", code: "PENDING_ORDER_LIMIT" },
+            {
+              error:
+                "У вас уже есть 2 неподтверждённых заказа. Дождитесь подтверждения или попросите магазин отменить один из них.",
+              code: "PENDING_ORDER_LIMIT",
+            },
             { status: 429 },
           );
         }
