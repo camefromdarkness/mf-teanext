@@ -66,7 +66,7 @@ function validateAvailableStock(
 class PendingOrderLimitError extends Error {}
 class StockChangedError extends MoyskladError {}
 
-const MAX_PENDING_ORDERS_PER_USER = 2;
+const MAX_PENDING_ORDERS_PER_USER = 3;
 
 function orderResponse(order: {
   id: string;
