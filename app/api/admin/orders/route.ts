@@ -103,10 +103,12 @@ export async function GET(request: Request) {
               }
             } catch (error) {
               statusSyncFailed = true;
-              console.error(
-                `Не удалось обновить статус заказа ${order.id} из МойСклад.`,
-                error,
-              );
+              if (!(error instanceof MoyskladError && error.suppressed)) {
+                console.error(
+                  `Не удалось обновить статус заказа ${order.id} из МойСклад.`,
+                  error,
+                );
+              }
             }
             return order;
           }),
@@ -130,7 +132,9 @@ export async function GET(request: Request) {
       },
     );
   } catch (error) {
-    console.error("Не удалось загрузить заказы для админ-панели.", error);
+    if (!(error instanceof MoyskladError && error.suppressed)) {
+      console.error("Не удалось загрузить заказы для админ-панели.", error);
+    }
     const isMoyskladFailure = error instanceof MoyskladError;
     return NextResponse.json(
       {

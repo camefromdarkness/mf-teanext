@@ -137,3 +137,13 @@ model OrderItem {
 
   @@index([orderId])
 }
+
+model MoyskladApiCircuit {
+  id          String    @id
+  blockedUntil DateTime?
+  probeUntil  DateTime?
+  lastStatus  Int?
+  lastCode    Int?
+  lastMessage String?   @db.VarChar(255)
+  updatedAt   DateTime  @updatedAt
+}

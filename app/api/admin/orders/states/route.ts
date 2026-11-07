@@ -14,7 +14,9 @@ export async function GET() {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    console.error("Не удалось загрузить статусы заказов МойСклад.", error);
+    if (!(error instanceof MoyskladError && error.suppressed)) {
+      console.error("Не удалось загрузить статусы заказов МойСклад.", error);
+    }
     return NextResponse.json(
       {
         error:

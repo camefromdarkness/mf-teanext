@@ -1,7 +1,10 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import { normalizeRussianPhone } from "@/lib/phone";
+import { prisma } from "@/lib/prisma";
 
 const API_URL = "https://api.moysklad.ru/api/remap/1.2";
+const API_CIRCUIT_ID = "moysklad-user-api";
 
 type MoyskladMeta = {
   href: string;
@@ -37,13 +40,34 @@ export type MoyskladOrderState = {
 };
 
 type MoyskladApiError = {
-  errors?: { error?: string }[];
+  errors?: { error?: string; code?: number }[];
 };
+
+type RequestCacheEntry = { expiresAt: number; value: unknown };
+
+const successfulGetCache = new Map<string, RequestCacheEntry>();
+const failedRequestCache = new Map<string, RequestCacheEntry>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
+const FAILED_REQUEST_COOLDOWN_MS = 60_000;
+const DEFAULT_API_PAUSE_MS = 60_000;
+const MAX_PARALLEL_API_REQUESTS = 4;
+const API_BUDGET_WINDOW_MS = 3_000;
+// The app uses a user token: cap at 30 of the documented 45 units per window,
+// allowing for the higher request weights that take effect later in 2026.
+const API_BUDGET_UNITS = 30;
+const apiRequestWindow: { at: number; units: number }[] = [];
+let activeApiRequests = 0;
+let apiPauseUntil = 0;
+let apiPauseError: MoyskladError | null = null;
+let apiProbeInFlight = false;
 
 export class MoyskladError extends Error {
   constructor(
     message: string,
     readonly status?: number,
+    readonly suppressed = false,
+    readonly cooldownMs?: number,
+    readonly code?: number,
   ) {
     super(message);
     this.name = "MoyskladError";
@@ -66,7 +90,264 @@ export function moyskladIsConfigured() {
   );
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+function requestKey(path: string, init: RequestInit, method: string) {
+  const body = typeof init.body === "string" ? init.body : "";
+  return createHash("sha256")
+    .update(method)
+    .update("\0")
+    .update(path)
+    .update("\0")
+    .update(body)
+    .digest("hex");
+}
+
+function trimCache(cache: Map<string, RequestCacheEntry>) {
+  if (cache.size <= 1_000) return;
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (entry.expiresAt <= now) cache.delete(key);
+  }
+  while (cache.size > 1_000) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey === undefined) break;
+    cache.delete(oldestKey);
+  }
+}
+
+async function acquireApiSlot(path: string) {
+  // Stock reports cost 5 units; other user-token requests are budgeted at 4.
+  const units = path.startsWith("/report/stock/all/") ? 5 : 4;
+  while (true) {
+    const now = Date.now();
+    while (apiRequestWindow[0]?.at <= now - API_BUDGET_WINDOW_MS) {
+      apiRequestWindow.shift();
+    }
+    const usedUnits = apiRequestWindow.reduce((total, entry) => total + entry.units, 0);
+    if (
+      activeApiRequests < MAX_PARALLEL_API_REQUESTS &&
+      usedUnits + units <= API_BUDGET_UNITS
+    ) {
+      activeApiRequests += 1;
+      apiRequestWindow.push({ at: now, units });
+      return () => {
+        activeApiRequests = Math.max(0, activeApiRequests - 1);
+      };
+    }
+
+    const nextWindowTime = apiRequestWindow[0]
+      ? apiRequestWindow[0].at + API_BUDGET_WINDOW_MS + 1
+      : now + 50;
+    await new Promise((resolve) => setTimeout(resolve, Math.max(25, nextWindowTime - now)));
+  }
+}
+
+function getRetryDelay(response: Response) {
+  const retryAfter = response.headers.get("Retry-After");
+  const retryAfterMs = response.headers.get("X-Lognex-Retry-After");
+  const resetMs = response.headers.get("X-Lognex-Reset");
+  const candidates = [
+    retryAfter && Number.isFinite(Number(retryAfter))
+      ? Number(retryAfter) * 1_000
+      : retryAfter
+        ? Math.max(0, Date.parse(retryAfter) - Date.now())
+        : 0,
+    retryAfterMs ? Number(retryAfterMs) : 0,
+    resetMs ? Number(resetMs) : 0,
+  ].filter((value) => Number.isFinite(value) && value > 0);
+  return Math.max(DEFAULT_API_PAUSE_MS, ...candidates);
+}
+
+function pausedApiError() {
+  if (apiPauseError) {
+    return new MoyskladError(
+      apiPauseError.message,
+      apiPauseError.status,
+      true,
+      apiPauseError.cooldownMs,
+      apiPauseError.code,
+    );
+  }
+  return new MoyskladError(
+    "Запрос к МойСклад временно приостановлен после предыдущей ошибки.",
+    503,
+    true,
+  );
+}
+
+async function acquirePersistentProbe() {
+  const state = await prisma.moyskladApiCircuit.findUnique({
+    where: { id: API_CIRCUIT_ID },
+  });
+  if (!state?.blockedUntil) {
+    if (apiPauseError && apiPauseUntil <= Date.now()) {
+      apiPauseError = null;
+      apiPauseUntil = 0;
+      apiProbeInFlight = false;
+    }
+    return false;
+  }
+
+  const now = new Date();
+  apiPauseError = new MoyskladError(
+    state.lastMessage ?? "Доступ к API МойСклад временно приостановлен после ошибки.",
+    state.lastStatus ?? 403,
+    false,
+    undefined,
+    state.lastCode ?? undefined,
+  );
+  if (state.blockedUntil > now) {
+    apiPauseUntil = state.blockedUntil.getTime();
+    throw pausedApiError();
+  }
+  if (state.probeUntil && state.probeUntil > now) {
+    apiPauseUntil = state.probeUntil.getTime();
+    throw pausedApiError();
+  }
+
+  const probeUntil = new Date(now.getTime() + DEFAULT_API_PAUSE_MS);
+  const claimed = await prisma.moyskladApiCircuit.updateMany({
+    where: {
+      id: API_CIRCUIT_ID,
+      blockedUntil: state.blockedUntil,
+      OR: [{ probeUntil: null }, { probeUntil: { lte: now } }],
+    },
+    data: { probeUntil },
+  });
+  if (claimed.count !== 1) {
+    apiPauseUntil = probeUntil.getTime();
+    throw pausedApiError();
+  }
+  apiPauseUntil = 0;
+  apiProbeInFlight = true;
+  return true;
+}
+
+async function persistApiPause(error: MoyskladError) {
+  const blockedUntil = new Date(
+    Date.now() + (error.cooldownMs ?? DEFAULT_API_PAUSE_MS),
+  );
+  await prisma.moyskladApiCircuit.upsert({
+    where: { id: API_CIRCUIT_ID },
+    create: {
+      id: API_CIRCUIT_ID,
+      blockedUntil,
+      probeUntil: null,
+      lastStatus: error.status ?? null,
+      lastCode: error.code ?? null,
+      lastMessage: error.message.slice(0, 255),
+      updatedAt: new Date(),
+    },
+    update: {
+      blockedUntil,
+      probeUntil: null,
+      lastStatus: error.status ?? null,
+      lastCode: error.code ?? null,
+      lastMessage: error.message.slice(0, 255),
+    },
+  }).catch(() => undefined);
+}
+
+async function clearPersistentPause() {
+  await prisma.moyskladApiCircuit.updateMany({
+    where: { id: API_CIRCUIT_ID },
+    data: {
+      blockedUntil: null,
+      probeUntil: null,
+      lastStatus: null,
+      lastCode: null,
+      lastMessage: null,
+    },
+  }).catch(() => undefined);
+}
+
+async function request<T>(
+  path: string,
+  init: RequestInit = {},
+  options: { cacheTtlMs?: number } = {},
+): Promise<T> {
+  const method = (init.method ?? "GET").toUpperCase();
+  const key = requestKey(path, init, method);
+  const now = Date.now();
+  const success = successfulGetCache.get(key);
+  if (success && success.expiresAt > now) return success.value as T;
+  if (success) successfulGetCache.delete(key);
+
+  const failed = failedRequestCache.get(key);
+  if (failed && failed.expiresAt > now) {
+    const error = failed.value as MoyskladError;
+    throw new MoyskladError(error.message, error.status, true, error.cooldownMs, error.code);
+  }
+  if (failed) failedRequestCache.delete(key);
+
+  const inFlight = inFlightRequests.get(key);
+  if (inFlight) return (await inFlight) as T;
+
+  const task = (async () => {
+    let isProbe = false;
+    if (apiPauseUntil > Date.now()) throw pausedApiError();
+    const releaseApiSlot = await acquireApiSlot(path);
+
+    try {
+      if (apiPauseUntil > Date.now()) throw pausedApiError();
+      isProbe = await acquirePersistentProbe();
+      if (!isProbe && apiPauseError) {
+        if (apiProbeInFlight) throw pausedApiError();
+        apiProbeInFlight = true;
+        isProbe = true;
+      }
+      const result = await performRequest<T>(path, init);
+      if (isProbe) {
+        await clearPersistentPause();
+        apiPauseUntil = 0;
+        apiPauseError = null;
+      }
+      const ttl = method === "GET" ? (options.cacheTtlMs ?? 0) : 0;
+      if (ttl > 0) {
+        successfulGetCache.set(key, { expiresAt: Date.now() + ttl, value: result });
+        trimCache(successfulGetCache);
+      }
+      return result;
+    } catch (error) {
+      const requestError =
+        error instanceof MoyskladError
+          ? error
+          : new MoyskladError(
+              error instanceof Error ? error.message : "Не удалось выполнить запрос к МойСклад.",
+            );
+      failedRequestCache.set(key, {
+        expiresAt: Date.now() + FAILED_REQUEST_COOLDOWN_MS,
+        value: requestError,
+      });
+      trimCache(failedRequestCache);
+      const shouldPauseIntegration =
+        requestError.status === 401 ||
+        requestError.status === 429 ||
+        (requestError.status === 403 && requestError.code === 1061);
+      if (!requestError.suppressed && shouldPauseIntegration) {
+        apiPauseError = requestError;
+        apiPauseUntil = Date.now() + (requestError.cooldownMs ?? DEFAULT_API_PAUSE_MS);
+        await persistApiPause(requestError);
+      } else if (isProbe) {
+        await clearPersistentPause();
+        apiPauseError = null;
+        apiPauseUntil = 0;
+      }
+      throw requestError;
+    } finally {
+      if (isProbe) apiProbeInFlight = false;
+      releaseApiSlot();
+    }
+  })();
+
+  inFlightRequests.set(key, task);
+  try {
+    return (await task) as T;
+  } finally {
+    if (inFlightRequests.get(key) === task) inFlightRequests.delete(key);
+  }
+}
+
+async function performRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = requiredSetting("MOYSKLAD_TOKEN");
   const headers = new Headers(init.headers);
   headers.set("Authorization", `Bearer ${token}`);
@@ -95,6 +376,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
         ? `МойСклад: ${message}`
         : `МойСклад отклонил запрос (HTTP ${response.status}).`,
       response.status,
+      false,
+      response.status === 429 ? getRetryDelay(response) : undefined,
+      body.errors?.[0]?.code,
     );
   }
 
@@ -137,7 +421,10 @@ export async function getMoyskladProduct(id: string) {
   };
 }
 
-export async function getMoyskladAvailableStock(assortmentIds: string[]) {
+export async function getMoyskladAvailableStock(
+  assortmentIds: string[],
+  options: { cacheTtlMs?: number } = {},
+) {
   const stock = new Map<string, number>();
   if (assortmentIds.length === 0) return stock;
 
@@ -158,6 +445,8 @@ export async function getMoyskladAvailableStock(assortmentIds: string[]) {
   });
   const result = await request<MoyskladCurrentStockRow[]>(
     `/report/stock/all/current?${params.toString()}`,
+    {},
+    options,
   );
   if (!Array.isArray(result)) {
     throw new MoyskladError("МойСклад вернул некорректные данные об остатках.");

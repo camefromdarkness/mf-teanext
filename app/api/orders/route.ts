@@ -354,7 +354,9 @@ export async function POST(request: Request) {
         data: { status: "REJECTED", moyskladSyncRequired: false },
       }).catch(() => undefined);
     }
-    console.error("Не удалось записать заказ в МойСклад.", error);
+    if (!(error instanceof MoyskladError && error.suppressed)) {
+      console.error("Не удалось записать заказ в МойСклад.", error);
+    }
     const isMoyskladFailure = error instanceof MoyskladError;
     return NextResponse.json(
       {

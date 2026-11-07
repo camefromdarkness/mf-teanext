@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import type { Tea } from "@/data/teas";
-import { getMoyskladAvailableStock } from "@/lib/moysklad";
+import { getMoyskladAvailableStock, MoyskladError } from "@/lib/moysklad";
 
 type TeaRecord = Awaited<ReturnType<typeof findTeas>>[number];
 
@@ -56,12 +56,14 @@ export async function getTeas() {
   );
   let stock: Map<string, number> | null;
   try {
-    stock = await getMoyskladAvailableStock(assortmentIds);
+    stock = await getMoyskladAvailableStock(assortmentIds, { cacheTtlMs: 30_000 });
   } catch (error) {
-    console.error(
-      "Не удалось проверить остатки в МойСклад. Каталог будет показан без данных об остатках.",
-      error,
-    );
+    if (!(error instanceof MoyskladError && error.suppressed)) {
+      console.error(
+        "Не удалось проверить остатки в МойСклад. Каталог будет показан без данных об остатках.",
+        error,
+      );
+    }
     stock = null;
   }
 
