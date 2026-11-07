@@ -130,13 +130,6 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (input.id && access.staff.role === "MANAGER") {
-    return NextResponse.json(
-      { error: "Менеджер может добавлять товары, но не редактировать существующие." },
-      { status: 403 },
-    );
-  }
-
   const teaData = {
     moyskladAssortmentId: input.moyskladAssortmentId,
     type: input.type,
@@ -211,7 +204,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const access = await authorizeStaff(["ADMIN", "SUPER_ADMIN"]);
+  const access = await authorizeStaff();
   if (!access.authorized) return access.response;
 
   let body: unknown;

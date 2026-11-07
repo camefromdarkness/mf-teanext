@@ -72,7 +72,7 @@ export default function AdminPanel({
   currentUserId: string;
   initialTeas: AdminTea[];
 }) {
-  const canEditExistingTeas = role !== "MANAGER";
+  const canEditExistingTeas = true;
   const canManageUsers = role !== "MANAGER";
   const canDeleteOrders = role !== "MANAGER";
   const catalog = useAdminCatalog(initialTeas);
@@ -443,7 +443,8 @@ export default function AdminPanel({
           detailsText={detailsText}
           setDetailsText={setDetailsText}
           busy={busy}
-          canDeleteImages={canDeleteOrders}
+          canDeleteImages={true}
+          canDeleteTea={canDeleteOrders}
           mediaImages={mediaImages}
           mediaOpen={mediaOpen}
           moyskladSearch={moyskladSearch}

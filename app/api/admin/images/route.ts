@@ -63,7 +63,7 @@ export async function GET() {
 }
 
 export async function DELETE(request: Request) {
-  const access = await authorizeStaff(["ADMIN", "SUPER_ADMIN"]);
+  const access = await authorizeStaff();
   if (!access.authorized) return access.response;
 
   let body: unknown;

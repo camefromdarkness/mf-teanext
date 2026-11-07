@@ -21,6 +21,7 @@ type Props = {
   setDetailsText: Dispatch<SetStateAction<string>>;
   busy: boolean;
   canDeleteImages: boolean;
+  canDeleteTea: boolean;
   mediaImages: MediaImage[];
   mediaOpen: boolean;
   moyskladSearch: string;
@@ -51,6 +52,7 @@ export default function AdminTeaEditor({
   setDetailsText,
   busy,
   canDeleteImages,
+  canDeleteTea,
   mediaImages,
   mediaOpen,
   moyskladSearch,
@@ -433,7 +435,7 @@ export default function AdminTeaEditor({
       >
         {busy ? "Сохранение…" : "Сохранить чай"}
       </button>
-      {editing && (
+      {editing && canDeleteTea && (
         <button
           className="admin-delete-button"
           type="button"
