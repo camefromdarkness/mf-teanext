@@ -24,9 +24,9 @@ export function generateMetadata(): Metadata {
       url: siteUrl,
       images: [
         {
-          url: "/logo.png",
-          width: 1277,
-          height: 1284,
+          url: "/logo-social.png",
+          width: 640,
+          height: 644,
           alt: "Логотип MOON FLOWER",
         },
       ],
@@ -35,7 +35,7 @@ export function generateMetadata(): Metadata {
       card: "summary_large_image",
       title: "MOON FLOWER — настоящий китайский чай",
       description: "Настоящий китайский чай, который дарит вкус, энергию и удовольствие.",
-      images: ["/logo.png"],
+      images: ["/logo-social.png"],
     },
     robots: {
       index: indexable,
