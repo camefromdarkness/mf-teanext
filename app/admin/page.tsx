@@ -1,3 +1,4 @@
+import "./admin.css";
 import { Suspense } from "react";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";

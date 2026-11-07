@@ -1,0 +1,218 @@
+    .admin-page {
+        width: min(1200px, calc(100% - 32px));
+        min-height: 100vh;
+        margin: 0 auto;
+        padding: 48px 0 80px;
+        color: #ededed;
+    }
+
+    .admin-login {
+        width: min(100%, 440px);
+        margin: 10vh auto;
+        padding: 34px;
+        border: 1px solid #262626;
+        background: #080808;
+    }
+
+    .admin-login h1,
+    .admin-heading h1 {
+        margin-bottom: 24px;
+        font-size: clamp(1.7rem, 4vw, 2.4rem);
+        font-weight: 500;
+    }
+
+    .admin-back-link {
+        display: inline-block;
+        margin-bottom: 28px;
+        color: #aaa;
+        text-decoration: none;
+    }
+
+    .admin-back-link:hover { color: #d6bd7f; }
+
+    .admin-page label {
+        display: grid;
+        gap: 8px;
+        color: #bbb;
+        font-size: 0.88rem;
+    }
+
+    .admin-page input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+    .admin-page textarea,
+    .admin-page select {
+        width: 100%;
+        border: 1px solid #303030;
+        border-radius: 4px;
+        padding: 11px 12px;
+        background: #101010;
+        color: #eee;
+        font: inherit;
+        resize: vertical;
+    }
+
+    .admin-page input:focus,
+    .admin-page textarea:focus,
+    .admin-page select:focus {
+        outline: 1px solid #d6bd7f;
+        border-color: #d6bd7f;
+    }
+
+    .admin-page button,
+    .admin-upload-button {
+        font: inherit;
+        cursor: pointer;
+    }
+
+    .admin-login > button,
+    .admin-save-button {
+        width: 100%;
+        margin-top: 20px;
+        padding: 12px 16px;
+        border: 1px solid #d6bd7f;
+        border-radius: 4px;
+        background: #d6bd7f;
+        color: #080808;
+        font-weight: 600;
+    }
+
+    .admin-delete-button {
+        width: 100%;
+        padding: 11px 16px;
+        border: 1px solid #783e3e;
+        border-radius: 4px;
+        background: transparent;
+        color: #ff9a9a;
+    }
+
+    .admin-delete-button:hover:not(:disabled) {
+        background: #291515;
+        border-color: #a64e4e;
+    }
+
+    .admin-confirm-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        display: grid;
+        place-items: center;
+        padding: 20px;
+        background: rgba(0, 0, 0, 0.82);
+        backdrop-filter: blur(5px);
+    }
+
+    .admin-confirm-dialog {
+        width: min(100%, 440px);
+        padding: 30px;
+        border: 1px solid #39352a;
+        border-radius: 6px;
+        background: linear-gradient(145deg, #12110e, #080808 70%);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.65);
+        animation: confirm-dialog-enter 180ms ease-out;
+    }
+
+    .admin-confirm-dialog .tea-category-label {
+        margin: 0 0 12px;
+        color: #d6bd7f;
+        font-size: 0.72rem;
+        letter-spacing: 0.16em;
+    }
+
+    .admin-confirm-dialog h2 {
+        margin: 0 0 12px;
+        color: #f3ead4;
+        font-size: 1.35rem;
+        font-weight: 500;
+    }
+
+    .admin-confirm-dialog > p:not(.tea-category-label) {
+        margin: 0;
+        color: #aaa59a;
+        line-height: 1.65;
+    }
+
+    .admin-confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 26px;
+    }
+
+    .admin-confirm-actions .admin-secondary-button,
+    .admin-confirm-delete-button,
+    .admin-confirm-primary-button {
+        min-height: 42px;
+        padding: 9px 16px;
+        border: 1px solid #383838;
+        border-radius: 4px;
+        background: transparent;
+        color: #ddd;
+    }
+
+    .admin-confirm-delete-button {
+        border-color: #a64e4e;
+        background: #783e3e;
+        color: #fff;
+    }
+
+    .admin-confirm-delete-button:hover:not(:disabled) {
+        background: #914747;
+    }
+
+    .admin-confirm-primary-button {
+        border-color: #d6bd7f;
+        background: #d6bd7f;
+        color: #14110a;
+        font-weight: 600;
+    }
+
+    .admin-confirm-primary-button:hover:not(:disabled) {
+        border-color: #ead49a;
+        background: #ead49a;
+    }
+
+    @keyframes confirm-dialog-enter {
+        from { opacity: 0; transform: translateY(8px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    .admin-page button:disabled,
+    .admin-upload-button:has(input:disabled) {
+        opacity: 0.55;
+        cursor: wait;
+    }
+
+    .admin-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        border-bottom: 1px solid #242424;
+        margin-bottom: 26px;
+    }
+
+    .admin-heading .tea-category-label { margin-bottom: 7px; }
+
+    .admin-tabs {
+        display: flex;
+        gap: 8px;
+        margin: 0 0 22px;
+        border-bottom: 1px solid #242424;
+    }
+
+    .admin-tabs button {
+        padding: 10px 16px;
+        border: 0;
+        border-bottom: 2px solid transparent;
+        background: transparent;
+        color: #aaa;
+    }
+
+    .admin-tabs button.active {
+        border-bottom-color: #d6bd7f;
+        color: #d6bd7f;
+    }
+
+    .admin-error { margin: 0 0 16px; color: #ff8c8c; }
+    @media (max-width: 700px) {
+        .admin-confirm-dialog { padding: 24px 20px; }
+    }

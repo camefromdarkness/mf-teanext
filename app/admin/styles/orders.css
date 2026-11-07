@@ -1,0 +1,68 @@
+    .admin-orders {
+        display: grid;
+        gap: 16px;
+    }
+    .admin-orders-heading,
+    .admin-order-heading,
+    .admin-order-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+    }
+    .admin-orders-heading h2 { margin-bottom: 5px; font-size: 1.3rem; font-weight: 500; }
+    .admin-orders-heading p,
+    .admin-order time,
+    .admin-order-footer span { color: #888; font-size: 0.85rem; }
+    .admin-orders-list { display: grid; gap: 14px; }
+    .admin-orders-pagination {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        padding: 8px 0;
+        color: #aaa;
+        font-size: 0.88rem;
+    }
+    .admin-order {
+        display: grid;
+        gap: 14px;
+        padding: 20px;
+        border: 1px solid #262626;
+        background: #080808;
+    }
+    .admin-order-heading h3 { margin-bottom: 4px; font-size: 1.05rem; font-weight: 500; }
+    .admin-order-heading > span { color: #d6bd7f; font-size: 0.88rem; }
+    .admin-order > p { color: #bbb; }
+    .admin-order a { color: #d6bd7f; }
+    .admin-order ul { display: grid; gap: 8px; list-style: none; }
+    .admin-order li { display: flex; justify-content: space-between; gap: 16px; color: #bbb; }
+    .admin-order-footer { padding-top: 12px; border-top: 1px solid #242424; }
+    .admin-order-footer strong { color: #d6bd7f; }
+    .admin-order-footer .admin-order-unsynced { color: #ff9a8d; }
+    .admin-orders-empty { padding: 24px; border: 1px solid #262626; color: #888; }
+    .admin-order-actions {
+        display: flex;
+        align-items: flex-end;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding-top: 4px;
+    }
+    .admin-order-actions label { display: grid; gap: 6px; color: #aaa; font-size: 0.85rem; }
+    .admin-order-actions select,
+    .admin-users-table select {
+        min-width: 180px;
+        padding: 9px 10px;
+        border: 1px solid #393939;
+        border-radius: 4px;
+        background: #101010;
+        color: #ededed;
+        font: inherit;
+    }
+    @media (max-width: 700px) {
+        .admin-orders-heading,
+        .admin-order-heading,
+        .admin-order-footer { align-items: flex-start; flex-direction: column; }
+        .admin-order-actions { align-items: stretch; flex-direction: column; }
+        .admin-order li { flex-direction: column; gap: 2px; }
+    }

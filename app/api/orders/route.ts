@@ -55,13 +55,16 @@ function validateAvailableStock(
   for (const item of items) {
     const available = Math.floor(stock.get(item.assortmentId) ?? 0);
     if (item.quantity > available) {
-      throw new MoyskladError(
+      throw new StockChangedError(
         "Остаток одного из товаров изменился. Обновите каталог и проверьте корзину.",
         409,
       );
     }
   }
 }
+
+class PendingOrderLimitError extends Error {}
+class StockChangedError extends MoyskladError {}
 
 function orderResponse(order: {
   id: string;
@@ -138,6 +141,8 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
+
+  const checkoutKey = body.checkoutKey;
 
   if (!moyskladIsConfigured()) {
     return NextResponse.json(
@@ -266,6 +271,8 @@ export async function POST(request: Request) {
         );
       }
 
+      const userId = session.user.id;
+
       const stock = await getMoyskladAvailableStock(
         preparedItems.map((item) => item.moyskladAssortmentId),
       );
@@ -278,19 +285,24 @@ export async function POST(request: Request) {
       );
 
       try {
-        order = await prisma.order.create({
-          data: {
-            checkoutKey: body.checkoutKey,
-            moyskladSyncRequired: true,
-            userId: session.user.id,
-            contactName,
-            phoneNumber,
-            total,
-            items: { create: preparedItems },
-          },
-          include: { items: true },
-        });
+        order = await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT pg_advisory_xact_lock(846210, hashtext(${userId}))`;
+          const retry = await tx.order.findUnique({ where: { checkoutKey }, include: { items: true } });
+          if (retry) return retry;
+          const pendingCount = await tx.order.count({ where: { userId, status: "PENDING" } });
+          if (pendingCount >= 3) throw new PendingOrderLimitError();
+          return tx.order.create({
+            data: { checkoutKey, moyskladSyncRequired: true, userId, contactName, phoneNumber, total, items: { create: preparedItems } },
+            include: { items: true },
+          });
+        }) as NonNullable<typeof order>;
       } catch (error) {
+        if (error instanceof PendingOrderLimitError) {
+          return NextResponse.json(
+            { error: "У вас уже есть 3 новых заказа. Дождитесь обработки или попросите магазин отменить один из них.", code: "PENDING_ORDER_LIMIT" },
+            { status: 429 },
+          );
+        }
         if (
           error instanceof Prisma.PrismaClientKnownRequestError &&
           error.code === "P2002"
@@ -308,44 +320,32 @@ export async function POST(request: Request) {
       }
     }
 
-    if (!order.moyskladOrderId) {
-      const externalCode = `mf-web-${body.checkoutKey}`;
+    order = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(846211, 1)`;
+      const currentOrder = await tx.order.findUniqueOrThrow({ where: { id: order!.id }, include: { items: true } });
+      if (currentOrder.moyskladOrderId) return currentOrder;
+      const externalCode = `mf-web-${checkoutKey}`;
       let moyskladOrder = await findMoyskladCustomerOrder(externalCode);
       if (!moyskladOrder) {
-        const orderItems = order.items.map((item) => {
-          if (!item.moyskladAssortmentId) {
-            throw new MoyskladError(
-              "У заказа нет сохранённой связи с товаром МойСклад.",
-            );
-          }
-          return {
-            assortmentId: item.moyskladAssortmentId,
-            quantity: item.quantity,
-            unitPrice: item.unitPrice,
-          };
+        const orderItems = currentOrder.items.map((item) => {
+          if (!item.moyskladAssortmentId) throw new MoyskladError("У заказа нет сохранённой связи с товаром МойСклад.");
+          return { assortmentId: item.moyskladAssortmentId, quantity: item.quantity, unitPrice: item.unitPrice };
         });
-        const stock = await getMoyskladAvailableStock(
-          orderItems.map((item) => item.assortmentId),
-        );
+        const stock = await getMoyskladAvailableStock(orderItems.map((item) => item.assortmentId));
         validateAvailableStock(orderItems, stock);
-        moyskladOrder = await createMoyskladCustomerOrder({
-          externalCode,
-          localOrderId: order.id,
-          contactName: order.contactName,
-          phoneNumber: order.phoneNumber,
-          items: orderItems,
-        });
+        moyskladOrder = await createMoyskladCustomerOrder({ externalCode, localOrderId: currentOrder.id, contactName: currentOrder.contactName, phoneNumber: currentOrder.phoneNumber, items: orderItems });
       }
-
-      order = await prisma.order.update({
-        where: { id: order.id },
-        data: { moyskladOrderId: moyskladOrder.id },
-        include: { items: true },
-      });
-    }
+      return tx.order.update({ where: { id: currentOrder.id }, data: { moyskladOrderId: moyskladOrder.id }, include: { items: true } });
+    }, { maxWait: 10_000, timeout: 90_000 });
 
     return NextResponse.json(orderResponse(order));
   } catch (error) {
+    if (error instanceof StockChangedError) {
+      await prisma.order.updateMany({
+        where: { checkoutKey: (body as { checkoutKey?: string }).checkoutKey, status: "PENDING", moyskladOrderId: null },
+        data: { status: "REJECTED", moyskladSyncRequired: false },
+      }).catch(() => undefined);
+    }
     console.error("Не удалось записать заказ в МойСклад.", error);
     const isMoyskladFailure = error instanceof MoyskladError;
     return NextResponse.json(

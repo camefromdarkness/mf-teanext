@@ -20,10 +20,9 @@ type MoyskladProduct = {
   archived?: boolean;
 };
 
-type MoyskladStockRow = {
-  meta?: { href?: string };
-  quantity?: number;
-  reserve?: number;
+type MoyskladCurrentStockRow = {
+  assortmentId?: string;
+  freeStock?: number;
 };
 
 type MoyskladEntity = {
@@ -153,45 +152,23 @@ export async function getMoyskladAvailableStock(assortmentIds: string[]) {
 
   const assortmentSet = new Set(assortmentIds);
   const storeId = requiredSetting("MOYSKLAD_STORE_ID");
-  const storeHref = entityMeta("store", storeId).href;
-  const limit = 1000;
-  let offset = 0;
+  const params = new URLSearchParams({
+    filter: `storeId=${storeId}`,
+    stockType: "freeStock",
+  });
+  const result = await request<MoyskladCurrentStockRow[]>(
+    `/report/stock/all/current?${params.toString()}`,
+  );
+  if (!Array.isArray(result)) {
+    throw new MoyskladError("МойСклад вернул некорректные данные об остатках.");
+  }
 
-  while (true) {
-    const params = new URLSearchParams({
-      filter: `store=${storeHref}`,
-      limit: String(limit),
-      offset: String(offset),
-    });
-    const result = await request<MoyskladList<MoyskladStockRow>>(
-      `/report/stock/all?${params.toString()}`,
-    );
-    if (!Array.isArray(result.rows)) {
-      throw new MoyskladError("МойСклад вернул некорректные данные об остатках.");
+  for (const row of result) {
+    if (!row.assortmentId || !assortmentSet.has(row.assortmentId)) continue;
+    if (typeof row.freeStock !== "number" || !Number.isFinite(row.freeStock)) {
+      throw new MoyskladError("МойСклад вернул некорректное количество товара.");
     }
-
-    for (const row of result.rows) {
-      const assortmentHref = row.meta?.href;
-      const assortmentId = assortmentHref
-        ? new URL(assortmentHref).pathname.split("/").pop()
-        : undefined;
-      if (!assortmentId || !assortmentSet.has(assortmentId)) continue;
-      if (
-        typeof row.quantity !== "number" ||
-        !Number.isFinite(row.quantity) ||
-        (row.reserve !== undefined &&
-          (typeof row.reserve !== "number" || !Number.isFinite(row.reserve)))
-      ) {
-        throw new MoyskladError("МойСклад вернул некорректное количество товара.");
-      }
-      stock.set(
-        assortmentId,
-        Math.max(0, row.quantity - (row.reserve ?? 0)),
-      );
-    }
-
-    if (result.rows.length < limit) break;
-    offset += limit;
+    stock.set(row.assortmentId, Math.max(0, row.freeStock));
   }
 
   return stock;
