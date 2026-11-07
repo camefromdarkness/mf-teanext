@@ -202,7 +202,7 @@ const telegramProvider: OIDCConfig<TelegramProfile> = {
 };
 
 function superAdminTelegramIds() {
-  const configuredIds = process.env.SUPER_ADMIN_TELEGRAM_IDS ?? "1011596994";
+  const configuredIds = process.env.SUPER_ADMIN_TELEGRAM_IDS ?? "";
   return new Set(
     configuredIds
       .split(",")

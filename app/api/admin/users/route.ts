@@ -85,9 +85,9 @@ export async function PATCH(request: Request) {
       { status: 404 },
     );
   }
-  if (target.role === "SUPER_ADMIN") {
+  if (target.role === "SUPER_ADMIN" && access.staff.role !== "SUPER_ADMIN") {
     return NextResponse.json(
-      { error: "Роль супер-администратора назначается только через доверенный аккаунт." },
+      { error: "Только супер-администратор может изменить роль другого супер-администратора." },
       { status: 403 },
     );
   }

@@ -66,6 +66,16 @@ function parseCart(snapshot: string, teas: Tea[]): CartLine[] {
       return [];
     }
 
+    const tea = teas.find((item) => item.id === id);
+    const availableStock = tea?.availableStock;
+    if (typeof availableStock === "number" && Number.isFinite(availableStock)) {
+      const cappedQuantity = Math.min(
+        quantity,
+        Math.max(0, Math.floor(availableStock)),
+      );
+      return cappedQuantity > 0 ? [{ id, quantity: cappedQuantity }] : [];
+    }
+
     return [{ id, quantity }];
   });
 }
@@ -113,6 +123,9 @@ export default function TeaStore({ teas }: { teas: Tea[] }) {
     });
   }, [activeType, search, teas]);
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const stockUnavailable = teas.some(
+    (tea) => tea.moyskladAssortmentId && tea.availableStock == null,
+  );
 
   useEffect(() => {
     if (!cartOpen && (!selectedTea || teaClosing)) return;
@@ -162,6 +175,11 @@ export default function TeaStore({ teas }: { teas: Tea[] }) {
     <>
       <Header cartCount={cartCount} onOpenCart={() => setCartOpen(true)} />
       <main>
+        {stockUnavailable && (
+          <p className="cart-stock-warning" role="status">
+            Не удалось загрузить остатки из МойСклад. Добавление товаров и оформление заказа временно недоступны.
+          </p>
+        )}
         <SearchFilters
           search={search}
           types={types}

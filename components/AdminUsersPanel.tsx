@@ -130,8 +130,8 @@ export default function AdminUsersPanel({
                     {new Date(user.createdAt).toLocaleDateString("ru-RU")}
                   </td>
                   <td>
-                    {user.role === "SUPER_ADMIN" ||
-                    user.id === currentUserId ||
+                    {user.id === currentUserId ||
+                    (user.role === "SUPER_ADMIN" && !isSuperAdmin) ||
                     (!isSuperAdmin && user.role === "ADMIN") ? (
                       <span>{roleName(user.role)}</span>
                     ) : (
@@ -143,6 +143,11 @@ export default function AdminUsersPanel({
                           void changeRole(user.id, event.target.value as UserRole)
                         }
                       >
+                        {user.role === "SUPER_ADMIN" && (
+                          <option value="SUPER_ADMIN" disabled>
+                            {roleName("SUPER_ADMIN")}
+                          </option>
+                        )}
                         <option value="CUSTOMER">Покупатель</option>
                         <option value="MANAGER">Менеджер</option>
                         {isSuperAdmin && (

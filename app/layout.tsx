@@ -9,27 +9,33 @@ export function generateMetadata(): Metadata {
   return {
     metadataBase: siteUrl,
     title: {
-      default: "MOON FLOWER — китайский чай: улуны, ГАБА и красный чай",
+      default: "MOON FLOWER — настоящий китайский чай",
       template: "%s | MOON FLOWER",
     },
-    description:
-      "Китайский чай MOON FLOWER: улуны, ГАБА и красный чай. Изучите коллекцию, выберите чай по вкусу и оформите заказ онлайн.",
+    description: "Настоящий китайский чай, который дарит вкус, энергию и удовольствие.",
     applicationName: "MOON FLOWER",
     alternates: { canonical: "/" },
     openGraph: {
       type: "website",
       locale: "ru_RU",
       siteName: "MOON FLOWER",
-      title: "MOON FLOWER — китайский чай",
-      description:
-        "Улуны, ГАБА и красный чай в коллекции MOON FLOWER. Выберите свой вкус и оформите заказ онлайн.",
+      title: "MOON FLOWER — настоящий китайский чай",
+      description: "Настоящий китайский чай, который дарит вкус, энергию и удовольствие.",
       url: siteUrl,
+      images: [
+        {
+          url: "/logo.png",
+          width: 1277,
+          height: 1284,
+          alt: "Логотип MOON FLOWER",
+        },
+      ],
     },
     twitter: {
-      card: "summary",
-      title: "MOON FLOWER — китайский чай",
-      description:
-        "Улуны, ГАБА и красный чай в коллекции MOON FLOWER.",
+      card: "summary_large_image",
+      title: "MOON FLOWER — настоящий китайский чай",
+      description: "Настоящий китайский чай, который дарит вкус, энергию и удовольствие.",
+      images: ["/logo.png"],
     },
     robots: {
       index: indexable,
