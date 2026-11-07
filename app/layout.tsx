@@ -32,7 +32,7 @@ export function generateMetadata(): Metadata {
       ],
     },
     twitter: {
-      card: "summary_large_image",
+      card: "summary",
       title: "MOON FLOWER — настоящий китайский чай",
       description: "Настоящий китайский чай, который дарит вкус, энергию и удовольствие.",
       images: ["/logo-social.png"],
